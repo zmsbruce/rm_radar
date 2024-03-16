@@ -47,7 +47,6 @@ int main() {
             const auto& armor_detections{armor_detections_batch[i]};
             for (const auto& detection : armor_detections) {
                 auto armor_rect = detection.cv_rect();
-                std::cout << armor_rect << std::endl;
                 armor_rect.x += car_rect.x;
                 armor_rect.y += car_rect.y;
 

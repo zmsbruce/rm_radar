@@ -359,8 +359,14 @@ class Detector {
     template <typename T>
     auto detect(T&& input) noexcept {
         std::vector<PreParam> pparams{preprocess(std::forward<T>(input))};
+
         context_->enqueueV3(streams_[0]);
+        if constexpr (!std::is_same_v<std::decay_t<T>, cv::Mat>) {
+            CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(streams_[0]));
+        }
+
         auto detections{postprocess(pparams)};
+
         if constexpr (std::is_same_v<std::decay_t<T>, cv::Mat>) {
             return detections[0];
         } else {

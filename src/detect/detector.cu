@@ -157,10 +157,12 @@ __global__ void blobKernel(const unsigned char* src, float* dst, int width,
         return;
     }
 
-    int offset = y * width * 3 + x * 3;
-    dst[offset / 3] = (float)src[offset + 2] * scale;
-    dst[offset / 3 + width * height] = (float)src[offset + 1] * scale;
-    dst[offset / 3 + width * height * 2] = (float)src[offset + 0] * scale;
+    dst[y * width + x + width * height * 0] =
+        src[(y * width + x) * 3 + 2] * scale;
+    dst[y * width + x + width * height * 1] =
+        src[(y * width + x) * 3 + 1] * scale;
+    dst[y * width + x + width * height * 2] =
+        src[(y * width + x) * 3 + 0] * scale;
 }
 
 /**
@@ -411,9 +413,9 @@ std::vector<std::vector<Detection>> Detector::postprocess(
         offset_decode += sizeof(Detection) / sizeof(float) * output_anchors_;
     }
 
-    for (int i = 0; i < batch_size_; ++i) {
-        CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(streams_[i]));
-    }
+    std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
+        CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
+    });
 
     std::vector<std::vector<Detection>> results(batch_size_);
     std::for_each(

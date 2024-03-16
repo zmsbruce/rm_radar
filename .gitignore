@@ -1,0 +1,6 @@
+.vscode
+bin
+build
+lib
+models/*.engine
+test/detect/*.engine

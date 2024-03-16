@@ -183,7 +183,8 @@ std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
 
     batch_size_ = 1;
 
-    std::memcpy(image_ptr_, image.data, image.total() * image.elemSize());
+    std::memcpy(image_ptr_, image.data,
+                image.total() * image.elemSize() * sizeof(unsigned char));
 
     auto& stream{streams_[0]};
 
@@ -251,7 +252,7 @@ std::vector<PreParam> Detector::preprocess(
         assert(image.channels() == input_channels_);
 
         std::memcpy(image_ptr_ + offset_image, image.data,
-                    image.total() * image.elemSize());
+                    image.total() * image.elemSize() * sizeof(unsigned char));
 
         PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
 
@@ -275,18 +276,16 @@ std::vector<PreParam> Detector::preprocess(
             input_channels_, padding_width, padding_height, top, bottom, left,
             right);
 
-        grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
-                         (input_height_ + block_size.y - 1) / block_size.y);
         blobKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_border_ptr_ + offset_input,
             static_cast<float*>(input_tensor_.data()) + offset_input,
             input_width_, input_height_, 1 / 255.f);
 
         offset_image += image.total() * image.elemSize();
-        offset_resize += padding_height * padding_width * image.channels();
-        offset_input += input_width_ * input_height_ * image.channels();
+        offset_resize += padding_height * padding_width * input_channels_;
+        offset_input += input_width_ * input_height_ * input_channels_;
 
-        pparams.emplace_back(std::move(pparam));
+        pparams.emplace_back(pparam);
     }
 
     context_->setInputShape(input_tensor_.name(),
@@ -296,8 +295,6 @@ std::vector<PreParam> Detector::preprocess(
     std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
         CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
     });
-
-    CUDA_CHECK_NOEXCEPT(cudaGetLastError());
 
     return pparams;
 }

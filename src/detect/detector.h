@@ -350,7 +350,7 @@ class Detector {
     explicit Detector(std::string_view engine_path, int classes,
                       int max_batch_size,
                       std::optional<int> opt_batch_size = std::nullopt,
-                      float nms_thresh = 0.65, float conf_thresh = 0.5,
+                      float nms_thresh = 0.65, float conf_thresh = 0.25,
                       int input_width = 640, int input_height = 640,
                       std::string_view input_name = "images",
                       int input_channels = 3, int opt_level = 5);

@@ -29,15 +29,17 @@ int main() {
     cv::resizeWindow(window_name, cv::Size(1296, 1024));
 
     while (capture.read(image)) {
-        car_images.clear();
-        car_detections = car_detector->detect(image);
-        car_images.reserve(car_detections.size());
-        std::for_each(
-            car_detections.begin(), car_detections.end(),
-            [&](const Detection& detection) {
-                car_images.push_back(image(detection.cv_rect()).clone());
-            });
-        armor_detections_batch = armor_detector->detect(car_images);
+        TIME_IT({
+            car_images.clear();
+            car_detections = car_detector->detect(image);
+            car_images.reserve(car_detections.size());
+            std::for_each(
+                car_detections.begin(), car_detections.end(),
+                [&](const Detection& detection) {
+                    car_images.push_back(image(detection.cv_rect()).clone());
+                });
+            armor_detections_batch = armor_detector->detect(car_images);
+        });
 
         for (size_t i = 0; i < car_detections.size(); ++i) {
             const auto& car_detection{car_detections[i]};

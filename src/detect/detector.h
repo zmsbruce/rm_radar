@@ -287,6 +287,25 @@ __global__ void decodeKernel(const float* src, float* dst, int channels,
                              int anchors, int classes);
 
 /**
+ * @brief Checks if T is cv::Mat or a container of cv::Mat.
+ *
+ * This concept defines two valid scenarios for the given type T:
+ * - T is a cv::Mat object.
+ * - T is a container (such as std::vector) that supports .begin() and .end()
+ *   iterators, and its value_type is cv::Mat.
+ *
+ * @tparam T The type to check against the ImageOrImages concept.
+ */
+template <typename T>
+concept ImageOrImages =
+    std::is_same_v<std::decay_t<T>, cv::Mat> || requires(T t) {
+        typename std::decay_t<T>::value_type;
+        { t.begin() } -> std::same_as<typename std::decay_t<T>::iterator>;
+        { t.end() } -> std::same_as<typename std::decay_t<T>::iterator>;
+        std::is_same_v<typename std::decay_t<T>::value_type, cv::Mat>;
+    };
+
+/**
  * @brief The Detector class provides functionality for object detection
  * using a pre-trained model.
  *
@@ -313,8 +332,8 @@ class Detector {
      * detection results. If the input is not a single `cv::Mat`, the CUDA
      * stream is synchronized after inference to ensure correct operation order.
      *
-     * @tparam T A type satisfying a single `cv::Mat` or a container of
-     * `cv::Mat` objects.
+     * @tparam ImageOrImages A type satisfying a single `cv::Mat` or a container
+     * of `cv::Mat` objects.
      * @param input A universal reference to the input image or images to be
      * processed.
      * @return `std::vector<Detection>` or `std::vector<std::vector<Detection>>`
@@ -324,7 +343,7 @@ class Detector {
      * However, if the function encounters a problem in CUDA checking, it will
      * call `std::abort()` directly.
      */
-    template <typename T>
+    template <ImageOrImages T>
     auto detect(T&& input) noexcept {
         std::vector<PreParam> pparams{preprocess(std::forward<T>(input))};
 

@@ -432,31 +432,58 @@ __host__ __device__ float IoU(float x1, float y1, float width1, float height1,
  * overlapping detections.
  * @param score_thresh The minimum confidence score required to keep a
  * detection.
- * @param anchor_num The total number of detections (anchors).
+ * @param anchors The total number of detections (anchors).
  */
 __global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
-                          int anchor_num) {
-    int pos = blockDim.x * blockIdx.x + threadIdx.x;
-    if (pos >= anchor_num) {
-        return;
-    }
+                          int anchors) {
+    const int block_size = blockDim.x;
+    const int thread_id = threadIdx.x;
+    const int row = blockIdx.y;
+    const int col = blockIdx.x;
+    constexpr int num_attrs = sizeof(Detection) / sizeof(float);
 
-    float* row_ptr = dev + pos * sizeof(Detection) / sizeof(float);
-    if (row_ptr[5] < score_thresh) {
-        row_ptr[4] = NAN;
-        return;
-    }
+    const int rows = min(anchors - row * block_size, block_size);
+    const int cols = min(anchors - col * block_size, block_size);
 
-    for (int i = 0; i < anchor_num; ++i) {
-        float* comp_ptr = dev + i * sizeof(Detection) / sizeof(float);
-        if (i == pos || row_ptr[4] != comp_ptr[4]) {
-            continue;
+    extern __shared__ float shared_data[];
+    if (thread_id < cols) {
+        for (int i = 0; i < num_attrs; ++i) {
+            shared_data[thread_id * num_attrs + i] =
+                dev[(block_size * col + thread_id) * num_attrs + i];
         }
-        float iou = IoU(row_ptr[0], row_ptr[1], row_ptr[2], row_ptr[3],
-                        comp_ptr[0], comp_ptr[1], comp_ptr[2], comp_ptr[3]);
-        if (iou > nms_thresh && comp_ptr[5] > row_ptr[5]) {
-            row_ptr[4] = NAN;
+    }
+    __syncthreads();
+
+    if (thread_id < rows) {
+        int row_index = (block_size * row + thread_id) * num_attrs;
+        float row_x = dev[row_index + 0];
+        float row_y = dev[row_index + 1];
+        float row_width = dev[row_index + 2];
+        float row_height = dev[row_index + 3];
+        float row_label = dev[row_index + 4];
+        float row_conf = dev[row_index + 5];
+
+        if (row_conf < score_thresh) {
+            dev[row_index + 4] = NAN;
             return;
+        }
+
+        for (int i = 0; i < cols; ++i) {
+            int col_index = num_attrs * i;
+            float comp_x = shared_data[col_index + 0];
+            float comp_y = shared_data[col_index + 1];
+            float comp_width = shared_data[col_index + 2];
+            float comp_height = shared_data[col_index + 3];
+            float comp_label = shared_data[col_index + 4];
+            float comp_conf = shared_data[col_index + 5];
+            if ((int)comp_label == (int)row_label && comp_conf > row_conf) {
+                float iou = IoU(row_x, row_y, row_width, row_height, comp_x,
+                                comp_y, comp_width, comp_height);
+                if (iou > nms_thresh) {
+                    dev[row_index + 4] = NAN;
+                    return;
+                }
+            }
         }
     }
 }
@@ -499,9 +526,11 @@ std::vector<std::vector<Detection>> Detector::postprocess(
             dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,
             output_channels_, output_anchors_, classes_);
 
-        NMSKernel<<<grid_size, block_size, 0, streams_[i]>>>(
-            dev_decode_ptr_ + offset_decode, nms_thresh_, conf_thresh_,
-            output_anchors_);
+        grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
+                         (output_anchors_ + block_size.x - 1) / block_size.x);
+        NMSKernel<<<grid_size, block_size, block_size.x * sizeof(Detection),
+                    streams_[i]>>>(dev_decode_ptr_ + offset_decode, nms_thresh_,
+                                   conf_thresh_, output_anchors_);
 
         cudaMemcpyAsync(nms_ptr_, dev_decode_ptr_,
                         output_anchors_ * batch_size_ * sizeof(Detection),

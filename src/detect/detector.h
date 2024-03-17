@@ -319,6 +319,27 @@ struct Detection {
 };
 
 /**
+ * @brief Stream insertion operator for the Detection structure.
+ *
+ * This operator overloads the insertion operator to allow for easy streaming
+ * of a Detection structure's content to an output stream. It formats the output
+ * as a JSON-like string containing the fields of the Detection structure.
+ *
+ * @param os Reference to the output stream to which the content is to be
+ * streamed.
+ * @param detection The Detection structure instance to be printed out.
+ * @return A reference to the output stream to allow for chaining of stream
+ * insertions.
+ */
+inline std::ostream& operator<<(std::ostream& os, const Detection& detection) {
+    os << "{ x: " << detection.x << ", y: " << detection.y
+       << ", width: " << detection.width << ", height: " << detection.height
+       << ", label: " << detection.label
+       << ", confidence: " << detection.confidence << " }";
+    return os;
+}
+
+/**
  * @brief The Detector class provides functionality for object detection
  * using a pre-trained model.
  *

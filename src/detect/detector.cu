@@ -446,20 +446,17 @@ __global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
     const int cols = min(anchors - col * block_size, block_size);
 
     extern __shared__ float shared_data[];
-    if (thread_id < cols) {
-        for (int i = 0; i < num_attrs; ++i) {
-            shared_data[thread_id * num_attrs + i] =
-                dev[(block_size * col + thread_id) * num_attrs + i];
-        }
+
+    for (int i = thread_id; i < cols * num_attrs; i += block_size) {
+        int col_offset = block_size * col * num_attrs;
+        shared_data[i] = dev[col_offset + i];
     }
     __syncthreads();
 
     if (thread_id < rows) {
         int row_index = (block_size * row + thread_id) * num_attrs;
-        float row_x = dev[row_index + 0];
-        float row_y = dev[row_index + 1];
-        float row_width = dev[row_index + 2];
-        float row_height = dev[row_index + 3];
+        float row_bbox[4] = {dev[row_index], dev[row_index + 1],
+                             dev[row_index + 2], dev[row_index + 3]};
         float row_label = dev[row_index + 4];
         float row_conf = dev[row_index + 5];
 
@@ -469,17 +466,13 @@ __global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
         }
 
         for (int i = 0; i < cols; ++i) {
-            int col_index = num_attrs * i;
-            float comp_x = shared_data[col_index + 0];
-            float comp_y = shared_data[col_index + 1];
-            float comp_width = shared_data[col_index + 2];
-            float comp_height = shared_data[col_index + 3];
-            float comp_label = shared_data[col_index + 4];
-            float comp_conf = shared_data[col_index + 5];
-            if ((int)comp_label == (int)row_label && comp_conf > row_conf) {
-                float iou = IoU(row_x, row_y, row_width, row_height, comp_x,
-                                comp_y, comp_width, comp_height);
-                if (iou > nms_thresh) {
+            float* comp_bbox = &shared_data[i * num_attrs];
+            float comp_label = comp_bbox[4];
+            float comp_conf = comp_bbox[5];
+            if (comp_label == row_label && comp_conf > row_conf) {
+                if (IoU(row_bbox[0], row_bbox[1], row_bbox[2], row_bbox[3],
+                        comp_bbox[0], comp_bbox[1], comp_bbox[2],
+                        comp_bbox[3]) > nms_thresh) {
                     dev[row_index + 4] = NAN;
                     return;
                 }

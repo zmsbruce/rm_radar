@@ -3,15 +3,11 @@
 #include <string>
 #include <vector>
 
+#include "common.h"
 #include "detect/detector.h"
 #include "utils.h"
 
 using namespace radar;
-
-inline cv::Rect2f cv_rect(const Detection& detection) {
-    return cv::Rect2f(detection.x, detection.y, detection.width,
-                      detection.height);
-}
 
 int main() {
     std::unique_ptr<Detector> car_detector{nullptr}, armor_detector{nullptr};
@@ -50,19 +46,25 @@ int main() {
             const auto& car_detection{car_detections[i]};
             auto car_rect{cv_rect(car_detection)};
 
-            cv::rectangle(image, car_rect, cv::Scalar(0, 255, 0));
+            auto car_text = cv::format("Car %.2f", car_detection.confidence);
+            drawDetection(image, car_text, car_rect, cv::Scalar(0, 200, 0));
+
             const auto& armor_detections{armor_detections_batch[i]};
             for (const auto& detection : armor_detections) {
                 auto armor_rect = cv_rect(detection);
                 armor_rect.x += car_rect.x;
                 armor_rect.y += car_rect.y;
 
-                cv::rectangle(image, armor_rect, cv::Scalar(0, 255, 255));
+                auto armor_text =
+                    cv::format("%s %.2f", kArmorNames[detection.label].c_str(),
+                               detection.confidence);
+                drawDetection(image, armor_text, armor_rect,
+                              cv::Scalar(0, 200, 200));
             }
         }
 
         cv::imshow(window_name, image);
-        cv::waitKey(0);
+        cv::waitKey(10);
     }
 
     cv::destroyWindow(window_name);

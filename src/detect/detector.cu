@@ -14,6 +14,7 @@
 
 #include <execution>
 #include <opencv2/opencv.hpp>
+#include <ranges>
 
 #include "detector.h"
 
@@ -372,6 +373,95 @@ __global__ void decodeKernel(const float* src, float* dst, int channels,
 }
 
 /**
+ * @brief Calculate Intersection over Union (IoU) for two bounding boxes.
+ *
+ * This function is designed to be compatible with both the host and device side
+ * in CUDA. It calculates the IoU based on the coordinates and dimensions of two
+ * bounding boxes.
+ *
+ * @param x1 The x-coordinate of the top-left corner of the first bounding box.
+ * @param y1 The y-coordinate of the top-left corner of the first bounding box.
+ * @param width1 The width of the first bounding box.
+ * @param height1 The height of the first bounding box.
+ * @param x2 The x-coordinate of the top-left corner of the second bounding box.
+ * @param y2 The y-coordinate of the top-left corner of the second bounding box.
+ * @param width2 The width of the second bounding box.
+ * @param height2 The height of the second bounding box.
+ * @return The IoU score as a floating point value. If there is no intersection,
+ * returns 0.0f.
+ */
+__host__ __device__ float IoU(float x1, float y1, float width1, float height1,
+                              float x2, float y2, float width2, float height2) {
+    float x_left = max(x1, x2);
+    float y_top = max(y1, y2);
+    float x_right = min(x1 + width1, x2 + width2);
+    float y_bottom = min(y1 + height1, y2 + height2);
+
+    if (x_right < x_left || y_bottom < y_top) {
+        return 0.0f;
+    }
+
+    float intersection_width = x_right - x_left;
+    float intersection_height = y_bottom - y_top;
+
+    float intersection_area = intersection_width * intersection_height;
+
+    float area1 = width1 * height1;
+    float area2 = width2 * height2;
+
+    float union_area = area1 + area2 - intersection_area;
+
+    return intersection_area / union_area;
+}
+
+/**
+ * @brief Non-Maximum Suppression (NMS) kernel for object detection.
+ *
+ * This CUDA kernel performs NMS on detection results to eliminate redundant
+ * overlapping bounding boxes based on their Intersection over Union (IoU)
+ * value. If the confidence score of a detection is below the score threshold,
+ * its label is set to NaN. For each detection, it compares with all other
+ * detections and if the IoU is above the NMS threshold and the confidence score
+ * of the compared detection is higher, the label of the current detection is
+ * set to NaN.
+ *
+ * @param dev Pointer to the device memory where detections are stored. Each
+ * detection has the following format: [x, y, width, height, label,
+ * confidence].
+ * @param nms_thresh The IoU threshold for determining when to suppress
+ * overlapping detections.
+ * @param score_thresh The minimum confidence score required to keep a
+ * detection.
+ * @param anchor_num The total number of detections (anchors).
+ */
+__global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
+                          int anchor_num) {
+    int pos = blockDim.x * blockIdx.x + threadIdx.x;
+    if (pos >= anchor_num) {
+        return;
+    }
+
+    float* row_ptr = dev + pos * sizeof(Detection) / sizeof(float);
+    if (row_ptr[5] < score_thresh) {
+        row_ptr[4] = NAN;
+        return;
+    }
+
+    for (int i = 0; i < anchor_num; ++i) {
+        float* comp_ptr = dev + i * sizeof(Detection) / sizeof(float);
+        if (i == pos || row_ptr[4] != comp_ptr[4]) {
+            continue;
+        }
+        float iou = IoU(row_ptr[0], row_ptr[1], row_ptr[2], row_ptr[3],
+                        comp_ptr[0], comp_ptr[1], comp_ptr[2], comp_ptr[3]);
+        if (iou > nms_thresh && comp_ptr[5] > row_ptr[5]) {
+            row_ptr[4] = NAN;
+            return;
+        }
+    }
+}
+
+/**
  * @brief Post-process the detections using CUDA kernels.
  *
  * This function post-processes the raw output of a detection model using CUDA.
@@ -406,8 +496,16 @@ std::vector<std::vector<Detection>> Detector::postprocess(
         block_size = dim3(BLOCK_SIZE * BLOCK_SIZE);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x);
         decodeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
-            dev_transpose_ptr_ + offset_output, decode_ptr_ + offset_decode,
+            dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,
             output_channels_, output_anchors_, classes_);
+
+        NMSKernel<<<grid_size, block_size, 0, streams_[i]>>>(
+            dev_decode_ptr_ + offset_decode, nms_thresh_, conf_thresh_,
+            output_anchors_);
+
+        cudaMemcpyAsync(nms_ptr_, dev_decode_ptr_,
+                        output_anchors_ * batch_size_ * sizeof(Detection),
+                        cudaMemcpyDeviceToHost, streams_[i]);
 
         offset_output += output_channels_ * output_anchors_;
         offset_decode += sizeof(Detection) / sizeof(float) * output_anchors_;
@@ -423,26 +521,15 @@ std::vector<std::vector<Detection>> Detector::postprocess(
         [&](std::vector<Detection>& result) {
             int i = &result - &results[0];
             std::span<Detection> detections(
-                reinterpret_cast<Detection*>(decode_ptr_) + output_anchors_ * i,
+                reinterpret_cast<Detection*>(nms_ptr_) + output_anchors_ * i,
                 output_anchors_);
+            auto nan_filtered_detections =
+                detections | std::views::filter([](const auto& detection) {
+                    return !std::isnan(detection.label);
+                });
 
-            std::vector<cv::Rect> bboxes;
-            std::vector<float> scores;
-            bboxes.reserve(detections.size());
-            scores.reserve(detections.size());
-            for (auto&& detection : detections) {
-                bboxes.emplace_back(cv::Rect(detection.x, detection.y,
-                                             detection.width,
-                                             detection.height));
-                scores.emplace_back(detection.confidence);
-            }
-            std::vector<int> indices;
-            cv::dnn::NMSBoxes(bboxes, scores, conf_thresh_, nms_thresh_,
-                              indices);
-
-            const auto& pparam(pparams[i]);
-            for (auto index : indices) {
-                auto& detection = detections[index];
+            const auto& pparam{pparams[i]};
+            for (auto& detection : nan_filtered_detections) {
                 restoreDetection(detection, pparam);
                 result.emplace_back(detection);
             }

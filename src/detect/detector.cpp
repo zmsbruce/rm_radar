@@ -145,8 +145,10 @@ Detector::Detector(std::string_view engine_path, int classes,
     CUDA_CHECK(cudaMalloc(
         &dev_transpose_ptr_,
         output_channels_ * output_anchors_ * max_batch_size * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&dev_decode_ptr_, output_anchors_ * max_batch_size *
+                                                sizeof(Detection)));
     CUDA_CHECK(cudaHostAlloc(
-        &decode_ptr_, output_anchors_ * max_batch_size * sizeof(Detection),
+        &nms_ptr_, output_anchors_ * max_batch_size * sizeof(Detection),
         cudaHostAllocDefault));
 }
 
@@ -154,8 +156,9 @@ Detector::~Detector() {
     CUDA_CHECK_NOEXCEPT(cudaFree(dev_border_ptr_));
     CUDA_CHECK_NOEXCEPT(cudaFree(dev_resize_ptr_));
     CUDA_CHECK_NOEXCEPT(cudaFree(dev_transpose_ptr_));
+    CUDA_CHECK_NOEXCEPT(cudaFree(dev_decode_ptr_));
     CUDA_CHECK_NOEXCEPT(cudaFreeHost(image_ptr_));
-    CUDA_CHECK_NOEXCEPT(cudaFreeHost(decode_ptr_));
+    CUDA_CHECK_NOEXCEPT(cudaFreeHost(nms_ptr_));
     for (auto&& stream : streams_) {
         CUDA_CHECK_NOEXCEPT(cudaStreamDestroy(stream));
     }

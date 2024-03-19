@@ -1,6 +1,4 @@
-if (NOT GTest_FOUND)
-    find_package(GTest REQUIRED)
-endif()
+find_package(GTest REQUIRED)
 
 add_subdirectory(detect)
 add_subdirectory(utils)

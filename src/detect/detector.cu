@@ -20,7 +20,7 @@
 
 namespace radar {
 
-#define BLOCK_SIZE 16
+constexpr int kBlockDim{16};
 
 /**
  * @brief Resizes an image using bilinear interpolation.
@@ -181,7 +181,7 @@ __global__ void blobKernel(const unsigned char* src, float* dst, int width,
 std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
     assert(image.channels() == input_channels_);
 
-    dim3 block_size(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 block_size(kBlockDim, kBlockDim);
     dim3 grid_size;
 
     batch_size_ = 1;
@@ -239,7 +239,7 @@ std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
  */
 std::vector<PreParam> Detector::preprocess(
     const std::span<cv::Mat> images) noexcept {
-    dim3 block_size(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 block_size(kBlockDim, kBlockDim);
     dim3 grid_size;
 
     batch_size_ = images.size();
@@ -505,7 +505,7 @@ std::vector<std::vector<Detection>> Detector::postprocess(
 
     dim3 block_size, grid_size;
     for (int i = 0; i < batch_size_; ++i) {
-        block_size = dim3(BLOCK_SIZE, BLOCK_SIZE);
+        block_size = dim3(kBlockDim, kBlockDim);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_channels_ + block_size.y - 1) / block_size.y);
         transposeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
@@ -513,7 +513,7 @@ std::vector<std::vector<Detection>> Detector::postprocess(
             dev_transpose_ptr_ + offset_output, output_channels_,
             output_anchors_);
 
-        block_size = dim3(BLOCK_SIZE * BLOCK_SIZE);
+        block_size = dim3(kBlockDim * kBlockDim);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x);
         decodeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,

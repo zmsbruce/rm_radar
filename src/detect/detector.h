@@ -286,13 +286,16 @@ __global__ void transposeKernel(const float* src, float* dst, int rows,
 __global__ void decodeKernel(const float* src, float* dst, int channels,
                              int anchors, int classes);
 
+__global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
+                          int anchors);
+
 /**
  * @brief Checks if T is cv::Mat or a container of cv::Mat.
  *
  * This concept defines two valid scenarios for the given type T:
  * - T is a cv::Mat object.
- * - T is a container (such as std::vector) that supports .begin() and .end()
- *   iterators, and its value_type is cv::Mat.
+ * - T is a container (such as std::vector) that supports .begin() and
+ * .end() iterators, and its value_type is cv::Mat.
  *
  * @tparam T The type to check against the ImageOrImages concept.
  */

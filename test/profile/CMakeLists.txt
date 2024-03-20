@@ -11,7 +11,7 @@ add_executable(ncu_test
 
 target_compile_options(vtune_test PRIVATE -g -O0)
 
-target_compile_options(ncu_test PRIVATE -g -G -O0)
+target_compile_options(ncu_test PRIVATE -g -G)
 
 target_link_libraries(vtune_test PRIVATE
     detector

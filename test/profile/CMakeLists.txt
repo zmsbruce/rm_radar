@@ -1,3 +1,6 @@
+find_package(OpenCV REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+
 add_executable(vtune_test 
     vtune_test.cpp
 )
@@ -14,6 +17,13 @@ target_link_libraries(vtune_test PRIVATE
     detector
 )
 
+target_include_directories(ncu_test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${OpenCV_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+
 target_link_libraries(ncu_test PRIVATE
-    detector
+    ${OpenCV_LIBS}
+    CUDA::cudart
 )

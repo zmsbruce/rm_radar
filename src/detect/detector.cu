@@ -20,7 +20,7 @@
 
 namespace radar {
 
-constexpr int kBlockDim{16};
+constexpr int kBlockDim{32};
 
 /**
  * @brief Resizes an image using bilinear interpolation.
@@ -513,12 +513,13 @@ std::vector<std::vector<Detection>> Detector::postprocess(
             dev_transpose_ptr_ + offset_output, output_channels_,
             output_anchors_);
 
-        block_size = dim3(kBlockDim * kBlockDim);
+        block_size = dim3(kBlockDim);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x);
         decodeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,
             output_channels_, output_anchors_, classes_);
 
+        block_size = dim3(kBlockDim * kBlockDim);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_anchors_ + block_size.x - 1) / block_size.x);
         NMSKernel<<<grid_size, block_size, block_size.x * sizeof(Detection),

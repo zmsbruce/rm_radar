@@ -237,7 +237,6 @@ int main() {
     constexpr int image_width{2592}, image_height{2048};
     constexpr int input_width{640}, input_height{640}, input_channels{3};
     constexpr int output_channels{84}, output_anchors{8400};
-    constexpr int block_dim(32);
     constexpr int classes{12};
     constexpr float nms_thresh{0.65}, score_thresh{0.50};
 
@@ -272,7 +271,7 @@ int main() {
                     cv::Size(input_width, input_height));
     float padding_width{pparam.width / pparam.ratio};
     float padding_height{pparam.height / pparam.ratio};
-    block_size = dim3(block_dim, block_dim);
+    block_size = dim3(16, 16);
     grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
                      (padding_height + block_size.y - 1) / block_size.y);
     resizeKernel<<<grid_size, block_size>>>(
@@ -297,13 +296,13 @@ int main() {
     transposeKernel<<<grid_size, block_size>>>(
         dev_output_ptr, dev_transpose_ptr, output_channels, output_anchors);
 
-    block_size = dim3(block_dim);
+    block_size = dim3(32);
     grid_size = dim3((output_anchors + block_size.x - 1) / block_size.x);
     decodeKernel<<<grid_size, block_size>>>(dev_transpose_ptr, dev_decode_ptr,
                                             output_channels, output_anchors,
                                             classes);
 
-    block_size = dim3(block_dim * block_dim);
+    block_size = dim3(16 * 16);
     grid_size = dim3((output_anchors + block_size.x - 1) / block_size.x,
                      (output_anchors + block_size.x - 1) / block_size.x);
     NMSKernel<<<grid_size, block_size, block_size.x * sizeof(Detection)>>>(

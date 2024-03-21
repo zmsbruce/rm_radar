@@ -63,6 +63,7 @@ __global__ void resizeKernel(const unsigned char* src, unsigned char* dst,
     float hy = 1.f - ly;
     float hx = 1.f - lx;
 
+#pragma unroll
     for (int c = 0; c < channels; ++c) {
         float tl =
             src[src_y_low * src_step + src_x_low * channels + c] * hy * hx;
@@ -121,12 +122,11 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
     int src_index = src_y * src_step + src_x * channels;
     int dst_index = dst_y * dst_step + dst_x * channels;
 
-    if (src_y >= 0 && src_y < src_h && src_x >= 0 && src_x < src_w) {
-        for (int c = 0; c < channels; ++c) {
+#pragma unroll
+    for (int c = 0; c < channels; ++c) {
+        if (src_y >= 0 && src_y < src_h && src_x >= 0 && src_x < src_w) {
             dst[dst_index + c] = src[src_index + c];
-        }
-    } else {
-        for (int c = 0; c < channels; ++c) {
+        } else {
             dst[dst_index + c] = 128;
         }
     }
@@ -145,10 +145,11 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
  * @param dst Pointer to the output image data in scaled float representation.
  * @param width Width of the input image in pixels.
  * @param height Height of the input image in pixels.
+ * @param channels Number of channels in the source and destination images.
  * @param scale Scaling factor to apply to each pixel's value.
  */
 __global__ void blobKernel(const unsigned char* src, float* dst, int width,
-                           int height, float scale) {
+                           int height, int channels, float scale) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -162,6 +163,11 @@ __global__ void blobKernel(const unsigned char* src, float* dst, int width,
         src[(y * width + x) * 3 + 1] * scale;
     dst[y * width + x + width * height * 2] =
         src[(y * width + x) * 3 + 0] * scale;
+
+    if (channels == 4) {
+        dst[y * width + x + width * height * 3] =
+            src[(y * width + x) * 3 + 3] * scale;
+    }
 }
 
 /**
@@ -210,7 +216,7 @@ std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
 
     blobKernel<<<grid_size, block_size, 0, stream>>>(
         dev_border_ptr_, static_cast<float*>(input_tensor_.data()),
-        input_width_, input_height_, 1 / 255.f);
+        input_width_, input_height_, input_channels_, 1 / 255.f);
 
     context_->setInputShape(input_tensor_.name(),
                             nvinfer1::Dims4(batch_size_, input_channels_,
@@ -280,7 +286,7 @@ std::vector<PreParam> Detector::preprocess(
         blobKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_border_ptr_ + offset_input,
             static_cast<float*>(input_tensor_.data()) + offset_input,
-            input_width_, input_height_, 1 / 255.f);
+            input_width_, input_height_, input_channels_, 1 / 255.f);
 
         offset_image += image.total() * image.elemSize();
         offset_resize += padding_height * padding_width * input_channels_;

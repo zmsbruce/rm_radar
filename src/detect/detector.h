@@ -278,7 +278,7 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
                                      int left, int right);
 
 __global__ void blobKernel(const unsigned char* src, float* dst, int width,
-                           int height, float scale);
+                           int height, int channels, float scale);
 
 __global__ void transposeKernel(const float* src, float* dst, int rows,
                                 int cols);

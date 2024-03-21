@@ -160,7 +160,7 @@ class BlobTest : public PreProcessTest {
         dim3 grid_size((src_w + block_size.x - 1) / block_size.x,
                        (src_h + block_size.y - 1) / block_size.y);
         radar::blobKernel<<<grid_size, block_size>>>(d_src, h_dst, src_w, src_h,
-                                                     scale);
+                                                     channels, scale);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 

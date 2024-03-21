@@ -326,10 +326,14 @@ __global__ void transposeKernel(const float* src, float* dst, int rows,
     __shared__ float shared[32][33];
     if (src_row < rows && src_col < cols) {
         shared[threadIdx.y][threadIdx.x] = src[src_col + src_row * cols];
-        __syncthreads();
+    } else {
+        shared[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
 
-        int dst_col = threadIdx.x + blockIdx.y * blockDim.y;
-        int dst_row = threadIdx.y + blockIdx.x * blockDim.x;
+    int dst_col = threadIdx.x + blockIdx.y * blockDim.y;
+    int dst_row = threadIdx.y + blockIdx.x * blockDim.x;
+    if (dst_col < rows && dst_row < cols) {
         dst[dst_col + dst_row * rows] = shared[threadIdx.x][threadIdx.y];
     }
 }
@@ -515,7 +519,7 @@ std::vector<std::vector<Detection>> Detector::postprocess(
 
     dim3 block_size, grid_size;
     for (int i = 0; i < batch_size_; ++i) {
-        block_size = dim3(16, 16);
+        block_size = dim3(32, 32);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_channels_ + block_size.y - 1) / block_size.y);
         transposeKernel<<<grid_size, block_size, 0, streams_[i]>>>(

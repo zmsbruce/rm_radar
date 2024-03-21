@@ -19,36 +19,31 @@
 #undef private
 #undef protected
 
-class PreProcessTest : public ::testing::Test {
+template <typename T, int Channels>
+class KernelTest : public ::testing::Test {
    protected:
-    unsigned char* d_src;
-
-    int src_w, src_h, channels;
-    cv::Mat src;
+    int src_w = 4;
+    int src_h = 4;
+    int channels = Channels;
+    T* h_src;
     dim3 block_size;
 
     virtual void SetUp() {
         block_size = dim3(16, 16);
-
-        src = cv::Mat(4, 4, CV_8UC3, cv::Scalar(0, 0, 0));
-        src_w = src.cols;
-        src_h = src.rows;
-        channels = src.channels();
-
-        std::span<uchar> span(src.data, src.total() * src.elemSize());
-        int value = 0;
-        std::generate(span.begin(), span.end(), [&value] { return value++; });
+        size_t src_total = src_w * src_h * channels;
 
         CUDA_CHECK(cudaSetDevice(0));
-        CUDA_CHECK(cudaMalloc(&d_src, src.total() * src.elemSize()));
-        CUDA_CHECK(cudaMemcpy(d_src, src.data, src.total() * src.elemSize(),
-                              cudaMemcpyHostToDevice));
+        cudaHostAlloc(&h_src, src_total * sizeof(T), cudaHostAllocMapped);
+
+        std::span<T> span(h_src, src_total);
+        int value = 0;
+        std::generate(span.begin(), span.end(), [&value] { return value++; });
     }
 
-    virtual void TearDown() { CUDA_CHECK(cudaFree(d_src)); }
+    virtual void TearDown() { CUDA_CHECK(cudaFreeHost(h_src)); }
 };
 
-class ResizeTest : public PreProcessTest {
+class ResizeTest : public KernelTest<unsigned char, 3> {
    protected:
     unsigned char* h_dst;
 
@@ -64,7 +59,7 @@ class ResizeTest : public PreProcessTest {
         dim3 grid_size((dst_w + block_size.x - 1) / block_size.x,
                        (dst_h + block_size.y - 1) / block_size.y);
         radar::resizeKernel<<<grid_size, block_size>>>(
-            d_src, h_dst, channels, src_w, src_h, dst_w, dst_h);
+            h_src, h_dst, channels, src_w, src_h, dst_w, dst_h);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -100,7 +95,7 @@ TEST_F(ResizeTest, ResizeHalf) {
     TestResize(0.5f, 0.5f, truth);
 }
 
-class CopyMakeBorderTest : public PreProcessTest {
+class CopyMakeBorderTest : public KernelTest<unsigned char, 3> {
    protected:
     unsigned char* h_dst;
 
@@ -117,7 +112,7 @@ class CopyMakeBorderTest : public PreProcessTest {
                        (dst_h + block_size.y - 1) / block_size.y);
         const std::vector<unsigned char> color(channels, 128);
         radar::copyMakeBorderKernel<<<grid_size, block_size>>>(
-            d_src, h_dst, channels, src_w, src_h, top, bottom, left, right);
+            h_src, h_dst, channels, src_w, src_h, top, bottom, left, right);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -148,7 +143,7 @@ TEST_F(CopyMakeBorderTest, CopyMakeBorder) {
     TestCopyMakeBorder(2, 2, 1, 1, truth);
 }
 
-class BlobTest : public PreProcessTest {
+class BlobTest : public KernelTest<unsigned char, 3> {
    protected:
     float* h_dst;
 
@@ -159,14 +154,15 @@ class BlobTest : public PreProcessTest {
 
         dim3 grid_size((src_w + block_size.x - 1) / block_size.x,
                        (src_h + block_size.y - 1) / block_size.y);
-        radar::blobKernel<<<grid_size, block_size>>>(d_src, h_dst, src_w, src_h,
+        radar::blobKernel<<<grid_size, block_size>>>(h_src, h_dst, src_w, src_h,
                                                      channels, scale);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 
         std::span<float> dst(h_dst, src_w * src_h * channels);
-        auto truth =
-            cv::dnn::blobFromImage(src, scale, cv::Size(), cv::Scalar(), true);
+        auto src_mat = cv::Mat(cv::Size(src_w, src_h), CV_8UC3, h_src);
+        auto truth = cv::dnn::blobFromImage(src_mat, scale, cv::Size(),
+                                            cv::Scalar(), true);
         for (int i = 0; i < src_w * src_h * channels; ++i) {
             ASSERT_EQ(dst[i], truth.ptr<float>()[i]);
         }
@@ -179,6 +175,36 @@ TEST_F(BlobTest, Blob) {
     constexpr float scale{0.01};
     TestBlob(scale);
 }
+
+class TransposeTest : public KernelTest<float, 1> {
+    float* h_dst;
+
+   protected:
+    void TestTranspose() {
+        CUDA_CHECK(cudaHostAlloc(&h_dst,
+                                 src_w * src_h * channels * sizeof(float),
+                                 cudaHostAllocMapped));
+
+        dim3 grid_size((src_w + block_size.x - 1) / block_size.x,
+                       (src_h + block_size.y - 1) / block_size.y);
+        radar::transposeKernel<<<grid_size, block_size>>>(h_src, h_dst, src_w,
+                                                          src_h);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        std::span<float> dst(h_dst, src_w * src_h * channels);
+
+        auto matrix = cv::Mat(cv::Size(src_w, src_h), CV_32FC1, h_src);
+        cv::transpose(matrix, matrix);
+        for (int i = 0; i < src_w * src_h * channels; ++i) {
+            ASSERT_EQ(dst[i], matrix.ptr<float>()[i]);
+        }
+
+        CUDA_CHECK(cudaFreeHost(h_dst));
+    }
+};
+
+TEST_F(TransposeTest, Transpose) { TestTranspose(); }
 
 class DetectTest : public ::testing::Test {
    protected:

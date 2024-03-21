@@ -320,11 +320,17 @@ std::vector<PreParam> Detector::preprocess(
  */
 __global__ void transposeKernel(const float* src, float* dst, int rows,
                                 int cols) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int src_row = blockIdx.y * blockDim.y + threadIdx.y;
+    int src_col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < rows && col < cols) {
-        dst[col * rows + row] = src[row * cols + col];
+    __shared__ float shared[32][33];
+    if (src_row < rows && src_col < cols) {
+        shared[threadIdx.y][threadIdx.x] = src[src_col + src_row * cols];
+        __syncthreads();
+
+        int dst_col = threadIdx.x + blockIdx.y * blockDim.y;
+        int dst_row = threadIdx.y + blockIdx.x * blockDim.x;
+        dst[dst_col + dst_row * rows] = shared[threadIdx.x][threadIdx.y];
     }
 }
 

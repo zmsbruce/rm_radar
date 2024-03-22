@@ -1,3 +1,15 @@
+/**
+ * @file detection.h
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief This file contains the declaration of detection class and its
+ * functions.
+ * @date 2024-03-22
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #pragma once
 
 #include <ostream>

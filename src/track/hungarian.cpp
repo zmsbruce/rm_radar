@@ -1,5 +1,7 @@
 #include "hungarian.h"
 
+namespace radar::track {
+
 // sisyphus
 Eigen::Matrix<float, -1, 2, Eigen::RowMajor> HungarianOper::Solve(
     const DYNAMICM &cost_matrix) {
@@ -31,3 +33,5 @@ Eigen::Matrix<float, -1, 2, Eigen::RowMajor> HungarianOper::Solve(
     }
     return re;
 }  // end Solve;
+
+}  // namespace radar::track

@@ -5,7 +5,7 @@
 
 #define INFTY_COST 1e5
 
-namespace radar {
+namespace radar::track {
 
 // for matching;
 class linear_assignment {
@@ -43,4 +43,4 @@ class linear_assignment {
                               bool only_position = false);
 };
 
-}  // namespace radar
+}  // namespace radar::track

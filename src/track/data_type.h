@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <vector>
 
+namespace radar::track {
+
 const int k_feature_dim = 12;  // feature dim
 
 typedef Eigen::Matrix<float, 1, 4, Eigen::RowMajor> DETECTBOX;
@@ -37,3 +39,5 @@ typedef struct t {
 
 // linear_assignment:
 typedef Eigen::Matrix<float, -1, -1, Eigen::RowMajor> DYNAMICM;
+
+}  // namespace radar::track

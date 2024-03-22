@@ -1,6 +1,6 @@
 #include "track.h"
 
-namespace radar {
+namespace radar::track {
 
 float label_trust;
 float label_score_min;
@@ -22,27 +22,24 @@ Track::Track(KAL_MEAN &mean, KAL_COVA &covariance, int track_id, int n_init,
     this->_max_age = max_age;
 }
 
+/**
+ * @brief Propagate the state distribution to the current time step using a
+ * Kalman filter prediction step.
+ *
+ * @param kf The Kalman filter
+ */
 void Track::predit(KalmanFilter *kf) {
-    /*Propagate the state distribution to the current time step using a
-        Kalman filter prediction step.
-
-        Parameters
-        ----------
-        kf : kalman_filter.KalmanFilter
-            The Kalman filter.
-        */
-
     kf->predict(this->mean, this->covariance);
     this->age += 1;
     this->time_since_update += 1;
 }
 
-void Track::update(KalmanFilter *const kf, const DETECTION_ROW &detection) {
-    KAL_DATA pa = kf->update(this->mean, this->covariance, detection.to_xyah());
+void Track::update(KalmanFilter *const kf, const Robot &robot) {
+    KAL_DATA pa = kf->update(this->mean, this->covariance, xyah(robot));
     this->mean = pa.first;
     this->covariance = pa.second;
 
-    featuresAppendOne(detection.feature);
+    featuresAppendOne(feature(robot));
 
     this->hits += 1;
     this->time_since_update = 0;
@@ -80,4 +77,4 @@ void Track::featuresAppendOne(const FEATURE &f) {
     features = newfeatures;
 }
 
-}  // namespace radar
+}  // namespace radar::track

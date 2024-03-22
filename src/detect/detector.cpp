@@ -22,6 +22,8 @@
 
 namespace radar {
 
+using namespace radar::detect;
+
 //! We utilize locked page memory to hold the preprocessed data of input images.
 //! Allocating this type of memory is a demanding process in terms of time,
 //! which is why we allocate it at the construction phase. The exact size of

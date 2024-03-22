@@ -57,7 +57,7 @@ class ResizeTest : public KernelTest<unsigned char, 4, 4, 3> {
         dim3 block_size(16, 16);
         dim3 grid_size((dst_w + block_size.x - 1) / block_size.x,
                        (dst_h + block_size.y - 1) / block_size.y);
-        radar::resizeKernel<<<grid_size, block_size>>>(
+        radar::detect::resizeKernel<<<grid_size, block_size>>>(
             h_src, h_dst, channels, src_w, src_h, dst_w, dst_h);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
@@ -111,7 +111,7 @@ class CopyMakeBorderTest : public KernelTest<unsigned char, 4, 4, 3> {
         dim3 grid_size((dst_w + block_size.x - 1) / block_size.x,
                        (dst_h + block_size.y - 1) / block_size.y);
         const std::vector<unsigned char> color(channels, 128);
-        radar::copyMakeBorderKernel<<<grid_size, block_size>>>(
+        radar::detect::copyMakeBorderKernel<<<grid_size, block_size>>>(
             h_src, h_dst, channels, src_w, src_h, top, bottom, left, right);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
@@ -155,8 +155,8 @@ class BlobTest : public KernelTest<unsigned char, 4, 4, 3> {
         dim3 block_size(16, 16);
         dim3 grid_size((src_w + block_size.x - 1) / block_size.x,
                        (src_h + block_size.y - 1) / block_size.y);
-        radar::blobKernel<<<grid_size, block_size>>>(h_src, h_dst, src_w, src_h,
-                                                     channels, scale);
+        radar::detect::blobKernel<<<grid_size, block_size>>>(
+            h_src, h_dst, src_w, src_h, channels, scale);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -189,8 +189,8 @@ class TransposeTest : public KernelTest<float, 36, 2, 1> {
         dim3 block_size(32, 32);
         dim3 grid_size((src_w + block_size.x - 1) / block_size.x,
                        (src_h + block_size.y - 1) / block_size.y);
-        radar::transposeKernel<<<grid_size, block_size>>>(h_src, h_dst, src_h,
-                                                          src_w);
+        radar::detect::transposeKernel<<<grid_size, block_size>>>(h_src, h_dst,
+                                                                  src_h, src_w);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
 

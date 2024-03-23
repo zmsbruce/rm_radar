@@ -2,12 +2,12 @@
 
 #include "linear_assignment.h"
 #include "nn_matching.h"
+#include "robot/robot.h"
 
 using namespace std;
+using namespace radar::track;
 
 namespace radar {
-
-using namespace track;
 
 Tracker::Tracker(float max_cosine_distance, int nn_budget,
                  float max_iou_distance, int max_age, int n_init) {
@@ -59,10 +59,12 @@ void Tracker::update(const std::vector<Robot> &robots) noexcept {
     vector<TRACKER_DATA> tid_features;
     for (Track &track : tracks_) {
         if (track.is_confirmed() == false) continue;
+        FEATURESS last_feature;
+        last_feature.resize(1, 12);
+        last_feature.row(0) = track.features.row(track.features.rows() - 1);
+
         active_targets.push_back(track.track_id);
-        tid_features.push_back(std::make_pair(track.track_id, track.features));
-        FEATURESS t = FEATURESS(0, k_feature_dim);
-        track.features = t;
+        tid_features.push_back(std::make_pair(track.track_id, last_feature));
     }
     this->metric->partial_fit(tid_features, active_targets);
 }

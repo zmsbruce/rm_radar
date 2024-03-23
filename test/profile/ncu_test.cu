@@ -2,7 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "detection.h"
+#include "detect/detection.h"
 
 using radar::Detection;
 

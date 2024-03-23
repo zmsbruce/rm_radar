@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "detect/detector.h"
-#include "detection.h"
+#include "detect/detection.h"
 
 using namespace radar;
 

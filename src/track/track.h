@@ -1,80 +1,40 @@
 #pragma once
 
 #include <numeric>
+#include <opencv2/opencv.hpp>
 
 #include "data_type.h"
-#include "detection.h"
+#include "detect/detection.h"
 #include "kalman_filter.h"
-#include "robot.h"
+
+namespace radar {
+
+class Robot;
+
+}  // namespace radar
 
 namespace radar::track {
 
-inline DETECTBOX xyah(float x, float y, float width, float height) {
-    DETECTBOX ret;
-    ret << x, y, width, height;
-    ret(0, 0) += ret(0, 2) * 0.5f;
-    ret(0, 1) += ret(0, 3) * 0.5f;
-    ret(0, 2) /= ret(0, 3);
-    return ret;
-}
+DETECTBOX xyah(float x, float y, float width, float height);
+DETECTBOX xyah(const cv::Rect& rect);
+DETECTBOX xyah(const Detection& detection);
+DETECTBOX xyah(const Robot& robot);
 
-inline DETECTBOX xyah(const cv::Rect& rect) {
-    return xyah(rect.x, rect.y, rect.width, rect.height);
-}
+DETECTBOX tlwh(float x, float y, float width, float height);
+DETECTBOX tlwh(const cv::Rect& rect);
+DETECTBOX tlwh(const Detection& detection);
+DETECTBOX tlwh(const Robot& robot);
 
-inline DETECTBOX xyah(const Detection& detection) {
-    return xyah(detection.x, detection.y, detection.width, detection.height);
-}
+FEATURE feature(const std::vector<Detection>& detections);
+FEATURE feature(const Robot& robot);
 
-inline DETECTBOX xyah(const Robot& robot) {
-    if (!robot.isDetected()) {
-        throw std::logic_error("robot is not detected.");
-    }
-    return xyah(robot.rect().value());
-}
+}  // namespace radar::track
 
-inline DETECTBOX tlwh(float x, float y, float width, float height) {
-    DETECTBOX ret;
-    ret << x, y, width, height;
-    return ret;
-}
+namespace radar {
 
-inline DETECTBOX tlwh(const cv::Rect& rect) {
-    return tlwh(rect.x, rect.y, rect.width, rect.height);
-}
+class Robot;
 
-inline DETECTBOX tlwh(const Detection& detection) {
-    return tlwh(detection.x, detection.y, detection.width, detection.height);
-}
-
-inline DETECTBOX tlwh(const Robot& robot) {
-    if (!robot.isDetected()) {
-        throw std::logic_error("robot is not detected.");
-    }
-    return tlwh(robot.rect().value());
-}
-
-inline FEATURE feature(const std::vector<Detection>& detections) {
-    FEATURE ret;
-    ret.setZero();
-    float total_confidence =
-        std::accumulate(detections.begin(), detections.end(), 0.,
-                        [](float partial, const Detection& detection) {
-                            return partial + detection.confidence;
-                        });
-    for (auto&& detection : detections) {
-        ret[static_cast<int>(detection.label)] +=
-            detection.confidence / total_confidence;
-    }
-    return ret;
-}
-
-inline FEATURE feature(const Robot& robot) {
-    if (!robot.isDetected()) {
-        throw std::logic_error("robot is not detected.");
-    }
-    return feature(robot.armors().value());
-}
+enum class TrackState { Tentative, Confirmed, Deleted };
 
 /**
  * @brief A single target track with state space `(x, y, a, h)` and associated
@@ -84,20 +44,20 @@ inline FEATURE feature(const Robot& robot) {
  */
 class Track {
    public:
-    Track(KAL_MEAN& mean, KAL_COVA& covariance, int track_id, int n_init,
-          int max_age, const FEATURE& feature);
-    void predit(KalmanFilter* kf);
-    void update(KalmanFilter* const kf, const Robot& robot);
+    Track(track::KAL_MEAN& mean, track::KAL_COVA& covariance, int track_id,
+          int n_init, int max_age, const track::FEATURE& feature);
+    void predit(track::KalmanFilter* kf);
+    void update(track::KalmanFilter* const kf, const Robot& robot);
     void mark_missed();
-    bool is_confirmed();
-    bool is_deleted();
-    bool is_tentative();
-    DETECTBOX to_tlwh();
+    bool is_confirmed() const;
+    bool is_deleted() const;
+    bool is_tentative() const;
+    track::DETECTBOX to_tlwh() const;
     int time_since_update;
     int track_id;
-    FEATURESS features;
-    KAL_MEAN mean;
-    KAL_COVA covariance;
+    track::FEATURESS features;
+    track::KAL_MEAN mean;
+    track::KAL_COVA covariance;
 
     int hits;
     int age;
@@ -106,7 +66,7 @@ class Track {
     TrackState state;
 
    private:
-    void featuresAppendOne(const FEATURE& f);
+    void featuresAppendOne(const track::FEATURE& f);
 };
 
-}  // namespace radar::track
+}  // namespace radar

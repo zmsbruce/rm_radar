@@ -2,13 +2,14 @@
 
 #include <vector>
 
-#include "detection.h"
+#include "detect/detection.h"
 #include "kalman_filter.h"
 #include "nn_matching.h"
-#include "robot.h"
 #include "track.h"
 
 namespace radar {
+
+class Robot;
 
 class Tracker {
    public:
@@ -19,10 +20,10 @@ class Tracker {
 
     void update(const std::vector<Robot>& robots) noexcept;
 
-    inline std::vector<track::Track> tracks() { return tracks_; }
+    inline std::vector<Track> tracks() { return tracks_; }
 
     typedef track::DYNAMICM (Tracker::*GATED_METRIC_FUNC)(
-        std::vector<track::Track>& tracks, const std::vector<Robot>& robots,
+        std::vector<Track>& tracks, const std::vector<Robot>& robots,
         const std::vector<int>& track_indices,
         const std::vector<int>& detection_indices);
 
@@ -31,19 +32,19 @@ class Tracker {
 
     void initiate_track(const Robot& robot);
 
-    track::DYNAMICM gated_matric(std::vector<track::Track>& tracks,
+    track::DYNAMICM gated_matric(std::vector<Track>& tracks,
                                  const std::vector<Robot>& robots,
                                  const std::vector<int>& track_indices,
                                  const std::vector<int>& detection_indices);
 
-    track::DYNAMICM iou_cost(std::vector<track::Track>& tracks,
+    track::DYNAMICM iou_cost(std::vector<Track>& tracks,
                              const std::vector<Robot>& robots,
                              const std::vector<int>& track_indices,
                              const std::vector<int>& detection_indices);
 
     Eigen::VectorXf iou(track::DETECTBOX& bbox, track::DETECTBOXSS& candidates);
 
-    std::vector<track::Track> tracks_;
+    std::vector<Track> tracks_;
     track::NearNeighborDisMetric* metric;
     float max_iou_distance;
     int max_age;

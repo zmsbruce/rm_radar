@@ -1,10 +1,15 @@
 #pragma once
 
 #include "data_type.h"
-#include "robot.h"
 #include "tracker.h"
 
 #define INFTY_COST 1e5
+
+namespace radar {
+
+class Robot;
+
+}  // namespace radar
 
 namespace radar::track {
 

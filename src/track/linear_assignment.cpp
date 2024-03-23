@@ -3,6 +3,7 @@
 #include <map>
 
 #include "hungarian.h"
+#include "robot/robot.h"
 
 namespace radar::track {
 

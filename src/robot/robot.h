@@ -58,6 +58,10 @@ class Robot {
 
     inline bool isLocated() const { return location_.has_value(); }
 
+    inline void setLocation(const cv::Point3f& location) noexcept {
+        location_ = location;
+    }
+
     inline std::optional<int> label() const {
         return isDetected() || isTracked() ? std::optional<int>(label_)
                                            : std::nullopt;

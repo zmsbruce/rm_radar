@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(rm_radar LANGUAGES CXX CUDA)
+project(rm_radar LANGUAGES C CXX CUDA)
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)

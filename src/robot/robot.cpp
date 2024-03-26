@@ -44,7 +44,9 @@ Robot::Robot(const Track& track) : track_state_{track.state} {
         track.features.colwise().sum();
     sum.maxCoeff(&label_);
 
-    auto detect_box = track.to_tlwh();
+    track::DETECTBOX detect_box = track.mean.leftCols(4);
+    detect_box(2) *= detect_box(3);
+    detect_box.leftCols(2) -= (detect_box.rightCols(2) / 2);
     rect_ =
         cv::Rect2f(detect_box(0), detect_box(1), detect_box(2), detect_box(3));
 }

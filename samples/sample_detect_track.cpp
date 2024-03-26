@@ -121,7 +121,7 @@ int main() {
     std::unique_ptr<Tracker> tracker{
         std::make_unique<Tracker>(1.5, 100, 0.9, 17, 4)};
 
-    cv::VideoCapture capture("../assets/field.mp4");
+    cv::VideoCapture capture("../assets/field_1.mp4");
     if (!capture.isOpened()) {
         throw std::runtime_error("video open failed");
     }

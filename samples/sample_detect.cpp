@@ -39,7 +39,7 @@ int main() {
     armor_detector =
         std::make_unique<Detector>("../models/armor.engine", 12, 20, 4);
 
-    cv::Mat image = cv::imread("../assets/field.jpg", cv::IMREAD_COLOR);
+    cv::Mat image = cv::imread("../assets/field_1.jpg", cv::IMREAD_COLOR);
     std::vector<cv::Mat> car_images;
 
     std::vector<radar::Detection> car_detections;

@@ -23,6 +23,8 @@ struct PairHash {
 
 class Locator {
    public:
+    friend class Radar;
+
     Locator() = delete;
 
     Locator(int image_width, int image_height, const cv::Matx33f& intrinsic,

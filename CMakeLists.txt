@@ -25,3 +25,7 @@ enable_testing()
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(samples)
+
+file(GLOB_RECURSE HEADER_FILES "${CMAKE_SOURCE_DIR}/src/*.h")
+install(FILES ${HEADER_FILES} DESTINATION include/${PROJECT_NAME})
+install(DIRECTORY lib/ DESTINATION lib/${PROJECT_NAME})

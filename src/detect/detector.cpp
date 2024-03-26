@@ -17,8 +17,11 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <optional>
 #include <ranges>
+#include <span>
 #include <stdexcept>
+#include <string_view>
 
 namespace radar {
 
@@ -268,6 +271,26 @@ void Detector::restoreDetection(Detection& detection,
                                  pparam.width - detection.x);
     detection.height = std::clamp(detection.height * pparam.ratio, 0.0f,
                                   pparam.height - detection.height);
+}
+
+void Detector::writeToFile(std::span<const char> data, std::string_view path) {
+    std::ofstream ofs(path.data(), std::ios::out | std::ios::binary);
+    ofs.exceptions(ofs.failbit | ofs.badbit);
+    ofs.write(data.data(), data.size());
+    ofs.close();
+}
+
+auto Detector::loadFromFile(std::string_view path)
+    -> std::pair<std::shared_ptr<char[]>, size_t> {
+    std::ifstream ifs{path.data(), std::ios::binary};
+    ifs.exceptions(ifs.failbit | ifs.badbit);
+    auto pbuf = ifs.rdbuf();
+    auto size = static_cast<size_t>(pbuf->pubseekoff(0, ifs.end, ifs.in));
+    pbuf->pubseekpos(0, ifs.in);
+    std::shared_ptr<char[]> buffer{new char[size]};
+    pbuf->sgetn(buffer.get(), size);
+    ifs.close();
+    return std::make_pair(buffer, size);
 }
 
 }  // namespace radar

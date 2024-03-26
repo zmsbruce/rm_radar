@@ -13,7 +13,6 @@
 #include "detect/detector.h"
 #include "locate/locator.h"
 #include "robot/robot.h"
-#include "utils.h"
 
 using namespace radar;
 using Robots = std::vector<Robot>;
@@ -109,9 +108,12 @@ int main() {
                       cv_color(robot.label().value()));
     }
 
-    cv::imshow("result", image);
+    auto window_name = "result";
+    cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+    cv::resizeWindow(window_name, cv::Size(1296, 1024));
+    cv::imshow(window_name, image);
     cv::waitKey(0);
-    cv::destroyAllWindows();
+    cv::destroyWindow(window_name);
 
     return EXIT_SUCCESS;
 }

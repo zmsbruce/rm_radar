@@ -19,6 +19,7 @@
 #include <memory>
 #include <numeric>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -27,7 +28,6 @@
 #include <vector>
 
 #include "detection.h"
-#include "utils.h"
 
 namespace radar {
 
@@ -380,6 +380,9 @@ class Detector {
         int opt_level);
     void restoreDetection(Detection& detection,
                           const detect::PreParam& pparam) const noexcept;
+    static void writeToFile(std::span<const char> data, std::string_view path);
+    static std::pair<std::shared_ptr<char[]>, size_t> loadFromFile(
+        std::string_view path);
     std::unique_ptr<nvinfer1::IRuntime> runtime_{nullptr};
     std::unique_ptr<nvinfer1::ICudaEngine> engine_{nullptr};
     std::unique_ptr<nvinfer1::IExecutionContext> context_{nullptr};

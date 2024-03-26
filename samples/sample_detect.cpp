@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "detect/detector.h"
-#include "utils.h"
 
 using namespace radar;
 

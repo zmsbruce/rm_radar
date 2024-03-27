@@ -24,6 +24,8 @@
 #include <initializer_list>
 #include <ostream>
 
+namespace radar::track {
+
 #define XYZMIN(x, y) (x) < (y) ? (x) : (y)
 #define XYZMAX(x, y) (x) > (y) ? (x) : (y)
 
@@ -248,3 +250,5 @@ class Matrix {
     size_t m_rows;
     size_t m_columns;
 };
+
+}  // namespace radar::track

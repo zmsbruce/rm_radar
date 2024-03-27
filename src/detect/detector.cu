@@ -18,9 +18,7 @@
 
 #include "detector.h"
 
-namespace radar {
-
-constexpr int kBlockDim{32};
+namespace radar::detect {
 
 /**
  * @brief Resizes an image using bilinear interpolation.
@@ -65,6 +63,7 @@ __global__ void resizeKernel(const unsigned char* src, unsigned char* dst,
     float hy = 1.f - ly;
     float hx = 1.f - lx;
 
+#pragma unroll
     for (int c = 0; c < channels; ++c) {
         float tl =
             src[src_y_low * src_step + src_x_low * channels + c] * hy * hx;
@@ -123,12 +122,11 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
     int src_index = src_y * src_step + src_x * channels;
     int dst_index = dst_y * dst_step + dst_x * channels;
 
-    if (src_y >= 0 && src_y < src_h && src_x >= 0 && src_x < src_w) {
-        for (int c = 0; c < channels; ++c) {
+#pragma unroll
+    for (int c = 0; c < channels; ++c) {
+        if (src_y >= 0 && src_y < src_h && src_x >= 0 && src_x < src_w) {
             dst[dst_index + c] = src[src_index + c];
-        }
-    } else {
-        for (int c = 0; c < channels; ++c) {
+        } else {
             dst[dst_index + c] = 128;
         }
     }
@@ -147,10 +145,11 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
  * @param dst Pointer to the output image data in scaled float representation.
  * @param width Width of the input image in pixels.
  * @param height Height of the input image in pixels.
+ * @param channels Number of channels in the source and destination images.
  * @param scale Scaling factor to apply to each pixel's value.
  */
 __global__ void blobKernel(const unsigned char* src, float* dst, int width,
-                           int height, float scale) {
+                           int height, int channels, float scale) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -164,142 +163,11 @@ __global__ void blobKernel(const unsigned char* src, float* dst, int width,
         src[(y * width + x) * 3 + 1] * scale;
     dst[y * width + x + width * height * 2] =
         src[(y * width + x) * 3 + 0] * scale;
-}
 
-/**
- * @brief Preprocesses a single image using the Detector class.
- *
- * This function preprocesses a single image using the provided Detector class.
- * It performs several operations including resizing, padding, and normalization
- * to prepare the image for further processing.
- *
- * @param image The input image to be preprocessed.
- * @return A vector of preprocessed image parameters with only a single element.
- * @note The number of channels of input image must be equal to
- * `input_channels_` or it will trigger assertion failure.
- */
-std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
-    assert(image.channels() == input_channels_);
-
-    dim3 block_size(kBlockDim, kBlockDim);
-    dim3 grid_size;
-
-    batch_size_ = 1;
-
-    std::memcpy(image_ptr_, image.data,
-                image.total() * image.elemSize() * sizeof(unsigned char));
-
-    auto& stream{streams_[0]};
-
-    PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
-    float padding_width{pparam.width / pparam.ratio};
-    float padding_height{pparam.height / pparam.ratio};
-    grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
-                     (padding_height + block_size.y - 1) / block_size.y);
-    resizeKernel<<<grid_size, block_size, 0, stream>>>(
-        image_ptr_, dev_resize_ptr_, input_channels_, pparam.width,
-        pparam.height, padding_width, padding_height);
-
-    int top{static_cast<int>(std::round(pparam.dh - 0.1))};
-    int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
-    int left{static_cast<int>(std::round(pparam.dw - 0.1))};
-    int right{static_cast<int>(std::round(pparam.dw + 0.1))};
-    grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
-                     (input_height_ + block_size.y - 1) / block_size.y);
-    copyMakeBorderKernel<<<grid_size, block_size, 0, stream>>>(
-        dev_resize_ptr_, dev_border_ptr_, input_channels_, padding_width,
-        padding_height, top, bottom, left, right);
-
-    blobKernel<<<grid_size, block_size, 0, stream>>>(
-        dev_border_ptr_, static_cast<float*>(input_tensor_.data()),
-        input_width_, input_height_, 1 / 255.f);
-
-    context_->setInputShape(input_tensor_.name(),
-                            nvinfer1::Dims4(batch_size_, input_channels_,
-                                            input_width_, input_height_));
-
-    return std::vector<PreParam>{pparam};
-}
-
-/**
- * @brief Preprocesses a batch of images using the Detector class.
- *
- * This function preprocesses a batch of images using the provided Detector
- * class. It performs several operations including resizing, padding, and
- * normalization for each image in the batch, and returns the preprocessed image
- * parameters for each image.
- *
- * @param first Iterator pointing to the first image in the batch.
- * @param last Iterator pointing to the position after the last image in the
- * batch.
- * @return A vector of preprocessed image parameters for each image in the
- * batch.
- * @note The number of channels of each input image must be equal to
- * `input_channels_` or it will trigger assertion failure.
- */
-std::vector<PreParam> Detector::preprocess(
-    const std::span<cv::Mat> images) noexcept {
-    dim3 block_size(kBlockDim, kBlockDim);
-    dim3 grid_size;
-
-    batch_size_ = images.size();
-
-    std::vector<PreParam> pparams;
-    pparams.reserve(batch_size_);
-
-    size_t offset_image{0}, offset_resize{0}, offset_input{0};
-
-    for (size_t i = 0; i < batch_size_; ++i) {
-        cv::Mat& image = images[i];
-
-        assert(image.channels() == input_channels_);
-
-        std::memcpy(image_ptr_ + offset_image, image.data,
-                    image.total() * image.elemSize() * sizeof(unsigned char));
-
-        PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
-
-        float padding_width{pparam.width / pparam.ratio};
-        float padding_height{pparam.height / pparam.ratio};
-        grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
-                         (padding_height + block_size.y - 1) / block_size.y);
-        resizeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
-            image_ptr_ + offset_image, dev_resize_ptr_ + offset_resize,
-            input_channels_, pparam.width, pparam.height, padding_width,
-            padding_height);
-
-        int top{static_cast<int>(std::round(pparam.dh - 0.1))};
-        int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
-        int left{static_cast<int>(std::round(pparam.dw - 0.1))};
-        int right{static_cast<int>(std::round(pparam.dw + 0.1))};
-        grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
-                         (input_height_ + block_size.y - 1) / block_size.y);
-        copyMakeBorderKernel<<<grid_size, block_size, 0, streams_[i]>>>(
-            dev_resize_ptr_ + offset_resize, dev_border_ptr_ + offset_input,
-            input_channels_, padding_width, padding_height, top, bottom, left,
-            right);
-
-        blobKernel<<<grid_size, block_size, 0, streams_[i]>>>(
-            dev_border_ptr_ + offset_input,
-            static_cast<float*>(input_tensor_.data()) + offset_input,
-            input_width_, input_height_, 1 / 255.f);
-
-        offset_image += image.total() * image.elemSize();
-        offset_resize += padding_height * padding_width * input_channels_;
-        offset_input += input_width_ * input_height_ * input_channels_;
-
-        pparams.emplace_back(pparam);
+    if (channels == 4) {
+        dst[y * width + x + width * height * 3] =
+            src[(y * width + x) * 3 + 3] * scale;
     }
-
-    context_->setInputShape(input_tensor_.name(),
-                            nvinfer1::Dims4(batch_size_, input_channels_,
-                                            input_width_, input_height_));
-
-    std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
-        CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
-    });
-
-    return pparams;
 }
 
 /**
@@ -316,11 +184,21 @@ std::vector<PreParam> Detector::preprocess(
  */
 __global__ void transposeKernel(const float* src, float* dst, int rows,
                                 int cols) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int src_row = blockIdx.y * blockDim.y + threadIdx.y;
+    int src_col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < rows && col < cols) {
-        dst[col * rows + row] = src[row * cols + col];
+    __shared__ float shared[32][33];
+    if (src_row < rows && src_col < cols) {
+        shared[threadIdx.y][threadIdx.x] = src[src_col + src_row * cols];
+    } else {
+        shared[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    int dst_col = threadIdx.x + blockIdx.y * blockDim.y;
+    int dst_row = threadIdx.y + blockIdx.x * blockDim.x;
+    if (dst_col < rows && dst_row < cols) {
+        dst[dst_col + dst_row * rows] = shared[threadIdx.x][threadIdx.y];
     }
 }
 
@@ -481,6 +359,148 @@ __global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
     }
 }
 
+}  // namespace radar::detect
+
+namespace radar {
+
+using namespace radar::detect;
+
+/**
+ * @brief Preprocesses a single image using the Detector class.
+ *
+ * This function preprocesses a single image using the provided Detector class.
+ * It performs several operations including resizing, padding, and normalization
+ * to prepare the image for further processing.
+ *
+ * @param image The input image to be preprocessed.
+ * @return A vector of preprocessed image parameters with only a single element.
+ * @note The number of channels of input image must be equal to
+ * `input_channels_` or it will trigger assertion failure.
+ */
+std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
+    assert(image.channels() == input_channels_);
+
+    dim3 block_size(16, 16);
+    dim3 grid_size;
+
+    batch_size_ = 1;
+
+    std::memcpy(image_ptr_, image.data,
+                image.total() * image.elemSize() * sizeof(unsigned char));
+
+    auto& stream{streams_[0]};
+
+    PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
+    float padding_width{pparam.width / pparam.ratio};
+    float padding_height{pparam.height / pparam.ratio};
+    grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
+                     (padding_height + block_size.y - 1) / block_size.y);
+    resizeKernel<<<grid_size, block_size, 0, stream>>>(
+        image_ptr_, dev_resize_ptr_, input_channels_, pparam.width,
+        pparam.height, padding_width, padding_height);
+
+    int top{static_cast<int>(std::round(pparam.dh - 0.1))};
+    int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
+    int left{static_cast<int>(std::round(pparam.dw - 0.1))};
+    int right{static_cast<int>(std::round(pparam.dw + 0.1))};
+    grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
+                     (input_height_ + block_size.y - 1) / block_size.y);
+    copyMakeBorderKernel<<<grid_size, block_size, 0, stream>>>(
+        dev_resize_ptr_, dev_border_ptr_, input_channels_, padding_width,
+        padding_height, top, bottom, left, right);
+
+    blobKernel<<<grid_size, block_size, 0, stream>>>(
+        dev_border_ptr_, static_cast<float*>(input_tensor_.data()),
+        input_width_, input_height_, input_channels_, 1 / 255.f);
+
+    context_->setInputShape(input_tensor_.name(),
+                            nvinfer1::Dims4(batch_size_, input_channels_,
+                                            input_width_, input_height_));
+
+    return std::vector<PreParam>{pparam};
+}
+
+/**
+ * @brief Preprocesses a batch of images using the Detector class.
+ *
+ * This function preprocesses a batch of images using the provided Detector
+ * class. It performs several operations including resizing, padding, and
+ * normalization for each image in the batch, and returns the preprocessed image
+ * parameters for each image.
+ *
+ * @param first Iterator pointing to the first image in the batch.
+ * @param last Iterator pointing to the position after the last image in the
+ * batch.
+ * @return A vector of preprocessed image parameters for each image in the
+ * batch.
+ * @note The number of channels of each input image must be equal to
+ * `input_channels_` or it will trigger assertion failure.
+ */
+std::vector<PreParam> Detector::preprocess(
+    const std::span<cv::Mat> images) noexcept {
+    dim3 block_size(16, 16);
+    dim3 grid_size;
+
+    batch_size_ = images.size();
+
+    std::vector<PreParam> pparams;
+    pparams.reserve(batch_size_);
+
+    size_t offset_image{0}, offset_resize{0}, offset_input{0};
+
+    for (size_t i = 0; i < batch_size_; ++i) {
+        cv::Mat& image = images[i];
+
+        assert(image.channels() == input_channels_);
+
+        std::memcpy(image_ptr_ + offset_image, image.data,
+                    image.total() * image.elemSize() * sizeof(unsigned char));
+
+        PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
+
+        float padding_width{pparam.width / pparam.ratio};
+        float padding_height{pparam.height / pparam.ratio};
+        grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
+                         (padding_height + block_size.y - 1) / block_size.y);
+        resizeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
+            image_ptr_ + offset_image, dev_resize_ptr_ + offset_resize,
+            input_channels_, pparam.width, pparam.height, padding_width,
+            padding_height);
+
+        int top{static_cast<int>(std::round(pparam.dh - 0.1))};
+        int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
+        int left{static_cast<int>(std::round(pparam.dw - 0.1))};
+        int right{static_cast<int>(std::round(pparam.dw + 0.1))};
+        grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
+                         (input_height_ + block_size.y - 1) / block_size.y);
+        copyMakeBorderKernel<<<grid_size, block_size, 0, streams_[i]>>>(
+            dev_resize_ptr_ + offset_resize, dev_border_ptr_ + offset_input,
+            input_channels_, padding_width, padding_height, top, bottom, left,
+            right);
+
+        blobKernel<<<grid_size, block_size, 0, streams_[i]>>>(
+            dev_border_ptr_ + offset_input,
+            static_cast<float*>(input_tensor_.data()) + offset_input,
+            input_width_, input_height_, input_channels_, 1 / 255.f);
+
+        offset_image += image.total() * image.elemSize();
+        offset_resize += padding_height * padding_width * input_channels_;
+        offset_input += input_width_ * input_height_ * input_channels_;
+
+        pparams.emplace_back(pparam);
+    }
+
+    context_->setInputShape(input_tensor_.name(),
+                            nvinfer1::Dims4(batch_size_, input_channels_,
+                                            input_width_, input_height_));
+
+    std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
+        CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
+    });
+
+    return pparams;
+}
+
 /**
  * @brief Post-process the detections using CUDA kernels.
  *
@@ -505,7 +525,7 @@ std::vector<std::vector<Detection>> Detector::postprocess(
 
     dim3 block_size, grid_size;
     for (int i = 0; i < batch_size_; ++i) {
-        block_size = dim3(kBlockDim, kBlockDim);
+        block_size = dim3(32, 32);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_channels_ + block_size.y - 1) / block_size.y);
         transposeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
@@ -513,13 +533,13 @@ std::vector<std::vector<Detection>> Detector::postprocess(
             dev_transpose_ptr_ + offset_output, output_channels_,
             output_anchors_);
 
-        block_size = dim3(kBlockDim);
+        block_size = dim3(32);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x);
         decodeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,
             output_channels_, output_anchors_, classes_);
 
-        block_size = dim3(kBlockDim * kBlockDim);
+        block_size = dim3(16 * 16);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_anchors_ + block_size.x - 1) / block_size.x);
         NMSKernel<<<grid_size, block_size, block_size.x * sizeof(Detection),

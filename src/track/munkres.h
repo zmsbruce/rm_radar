@@ -27,6 +27,8 @@
 
 #include "matrix.h"
 
+namespace radar::track {
+
 template <typename Data>
 class Munkres {
     static constexpr int NORMAL = 0;
@@ -440,3 +442,5 @@ class Munkres {
     bool *col_mask;
     size_t saverow = 0, savecol = 0;
 };
+
+}  // namespace radar::track

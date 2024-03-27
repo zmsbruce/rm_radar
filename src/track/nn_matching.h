@@ -4,6 +4,8 @@
 
 #include "data_type.h"
 
+namespace radar::track {
+
 // A tool to calculate distance;
 class NearNeighborDisMetric {
    public:
@@ -38,3 +40,5 @@ class NearNeighborDisMetric {
     int budget;
     std::map<int, FEATURESS> samples;
 };
+
+}  // namespace radar::track

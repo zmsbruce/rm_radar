@@ -2,6 +2,8 @@
 
 #include "data_type.h"
 
+namespace radar::track {
+
 class KalmanFilter {
    public:
     static const double chi2inv95[10];
@@ -22,3 +24,5 @@ class KalmanFilter {
     float _std_weight_position;
     float _std_weight_velocity;
 };
+
+}  // namespace radar::track

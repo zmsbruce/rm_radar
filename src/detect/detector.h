@@ -19,6 +19,7 @@
 #include <memory>
 #include <numeric>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -27,7 +28,6 @@
 #include <vector>
 
 #include "detection.h"
-#include "utils.h"
 
 namespace radar {
 
@@ -74,6 +74,8 @@ namespace radar {
             std::abort();                                                 \
         }                                                                 \
     } while (0)
+
+namespace detect {
 
 /**
  * @brief Returns the size in bytes of the given data type.
@@ -278,7 +280,7 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
                                      int left, int right);
 
 __global__ void blobKernel(const unsigned char* src, float* dst, int width,
-                           int height, float scale);
+                           int height, int channels, float scale);
 
 __global__ void transposeKernel(const float* src, float* dst, int rows,
                                 int cols);
@@ -307,6 +309,8 @@ concept ImageOrImages =
         { t.end() } -> std::same_as<typename std::decay_t<T>::iterator>;
         std::is_same_v<typename std::decay_t<T>::value_type, cv::Mat>;
     };
+
+}  // namespace detect
 
 /**
  * @brief The Detector class provides functionality for object detection
@@ -346,9 +350,10 @@ class Detector {
      * However, if the function encounters a problem in CUDA checking, it will
      * call `std::abort()` directly.
      */
-    template <ImageOrImages T>
+    template <detect::ImageOrImages T>
     auto detect(T&& input) noexcept {
-        std::vector<PreParam> pparams{preprocess(std::forward<T>(input))};
+        std::vector<detect::PreParam> pparams{
+            preprocess(std::forward<T>(input))};
 
         context_->enqueueV3(streams_[0]);
         if constexpr (!std::is_same_v<std::decay_t<T>, cv::Mat>) {
@@ -365,15 +370,19 @@ class Detector {
     }
 
    private:
-    std::vector<PreParam> preprocess(const cv::Mat& image) noexcept;
-    std::vector<PreParam> preprocess(const std::span<cv::Mat> images) noexcept;
+    std::vector<detect::PreParam> preprocess(const cv::Mat& image) noexcept;
+    std::vector<detect::PreParam> preprocess(
+        const std::span<cv::Mat> images) noexcept;
     std::vector<std::vector<Detection>> postprocess(
-        std::span<PreParam> pparams) noexcept;
+        std::span<detect::PreParam> pparams) noexcept;
     std::pair<std::shared_ptr<char[]>, size_t> serializeEngine(
         std::string_view onnx_path, int opt_batch_size, int max_batch_size,
         int opt_level);
     void restoreDetection(Detection& detection,
-                          const PreParam& pparam) const noexcept;
+                          const detect::PreParam& pparam) const noexcept;
+    static void writeToFile(std::span<const char> data, std::string_view path);
+    static std::pair<std::shared_ptr<char[]>, size_t> loadFromFile(
+        std::string_view path);
     std::unique_ptr<nvinfer1::IRuntime> runtime_{nullptr};
     std::unique_ptr<nvinfer1::ICudaEngine> engine_{nullptr};
     std::unique_ptr<nvinfer1::IExecutionContext> context_{nullptr};
@@ -381,8 +390,8 @@ class Detector {
     std::string_view input_name_;
     int classes_;
     float nms_thresh_, conf_thresh_;
-    Logger logger_;
-    Tensor input_tensor_, output_tensor_;
+    detect::Logger logger_;
+    detect::Tensor input_tensor_, output_tensor_;
     std::vector<cudaStream_t> streams_;
     unsigned char* image_ptr_{nullptr};
     unsigned char* dev_resize_ptr_{nullptr};

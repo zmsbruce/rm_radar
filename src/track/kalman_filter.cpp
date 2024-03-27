@@ -2,6 +2,8 @@
 
 #include <Eigen/Cholesky>
 
+namespace radar::track {
+
 // sisyphus
 const double KalmanFilter::chi2inv95[10] = {
     0, 3.8415, 5.9915, 7.8147, 9.4877, 11.070, 12.592, 14.067, 15.507, 16.919};
@@ -128,3 +130,5 @@ Eigen::Matrix<float, 1, -1> KalmanFilter::gating_distance(
     auto square_maha = zz.colwise().sum();
     return square_maha;
 }
+
+}  // namespace radar::track

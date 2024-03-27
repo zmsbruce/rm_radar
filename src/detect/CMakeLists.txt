@@ -9,10 +9,14 @@ add_library(detector SHARED
 )
 
 target_include_directories(detector PUBLIC
-    ${PROJECT_SOURCE_DIR}/src
     ${OpenCV_INCLUDE_DIRS}
     ${TensorRT_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}
+)
+
+target_include_directories(detector PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 target_link_libraries(detector PUBLIC

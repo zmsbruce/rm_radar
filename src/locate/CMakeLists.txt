@@ -7,9 +7,13 @@ add_library(locator SHARED
 )
 
 target_include_directories(locator PUBLIC
-    ${PROJECT_SOURCE_DIR}/src
     ${OpenCV_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
+)
+
+target_include_directories(locator PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
 target_link_libraries(locator PUBLIC

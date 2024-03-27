@@ -1,3 +1,19 @@
+/**
+ * @file locator.h
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief The file defines the `Locator` class, which performs robot
+ * localization by processing point cloud data. It integrates depth images,
+ * performs clustering, and searches for robots within the analyzed data using
+ * sensor fusion techniques.
+ * @date 2024-03-27
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
+#pragma once
+
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/point_types.h>
 #include <pcl/segmentation/extract_clusters.h>
@@ -12,6 +28,13 @@
 
 namespace radar {
 
+/**
+ * @brief Hash function for std::pair.
+ *
+ * This struct defines a hash function for std::pair objects. It combines the
+ * hash values of the pair's first and second elements using the XOR (^)
+ * operator.
+ */
 struct PairHash {
     template <typename T1, typename T2>
     std::size_t operator()(const std::pair<T1, T2>& p) const {
@@ -21,6 +44,13 @@ struct PairHash {
     }
 };
 
+/**
+ * @brief Class for robot localization using sensor fusion of point cloud data.
+ *
+ * The Locator class performs robot localization by processing point cloud data.
+ * It integrates depth images from the point cloud, performs clustering to
+ * identify objects, and searches for robots within the analyzed data.
+ */
 class Locator {
    public:
     friend class Radar;

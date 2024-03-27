@@ -1,3 +1,14 @@
+/**
+ * @file robot.cpp
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief This file contains the declaration of some robot functions.
+ * @date 2024-03-27
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #include "robot.h"
 
 #include "track/track.h"

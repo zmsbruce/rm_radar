@@ -1,7 +1,8 @@
 /**
  * @file robot.h
  * @author zmsbruce (zmsbruce@163.com)
- * @brief This file contains the declaration of robot class and its functions.
+ * @brief This file contains the definition and part of declaration of robot
+ * class and its functions.
  * @date 2024-03-22
  *
  * @copyright (c) 2024 HITCRT
@@ -28,6 +29,12 @@ class Track;
 
 enum class TrackState;
 
+/**
+ * @brief Enumeration representing the labels for robot types.
+ *
+ * The Label enum defines the labels for different types of robots. Each label
+ * corresponds to a specific robot type.
+ */
 enum Label {
     NoneType = -1,
     BlueHero = 0,
@@ -44,6 +51,12 @@ enum Label {
     RedSentry = 11
 };
 
+/**
+ * @brief Class representing a robot.
+ *
+ * The Robot class encapsulates information about a robot, including its
+ * detections, tracking state, location, and other attributes.
+ */
 class Robot {
    public:
     Robot() = default;

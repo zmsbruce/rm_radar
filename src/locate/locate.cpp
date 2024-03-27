@@ -1,3 +1,17 @@
+/**
+ * @file locate.cpp
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief The file implements the `Locator` class, which performs robot
+ * localization by processing point cloud data. It integrates depth images,
+ * performs clustering, and searches for robots within the analyzed data using
+ * sensor fusion techniques.
+ * @date 2024-03-27
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #include <algorithm>
 #include <cmath>
 #include <execution>
@@ -10,6 +24,16 @@
 
 namespace radar {
 
+/**
+ * @brief Converts a point from the Lidar coordinate system to the world
+ * coordinate system.
+ *
+ * This function takes a point in the Lidar coordinate system and applies the
+ * appropriate transformations to convert it to the world coordinate system.
+ *
+ * @param point The point in the Lidar coordinate system to be converted.
+ * @return The corresponding point in the world coordinate system.
+ */
 cv::Point3f Locator::lidarToWorld(const cv::Point3f& point) const noexcept {
     cv::Matx41f lidar_coor{point.x, point.y, point.z, 1.0f};
     cv::Matx41f world_coor =
@@ -17,6 +41,16 @@ cv::Point3f Locator::lidarToWorld(const cv::Point3f& point) const noexcept {
     return cv::Point3f(world_coor(0), world_coor(1), world_coor(2));
 }
 
+/**
+ * @brief Converts a point from the camera coordinate system to the Lidar
+ * coordinate system.
+ *
+ * This function takes a point in the camera coordinate system and applies the
+ * necessary transformations to convert it to the Lidar coordinate system.
+ *
+ * @param point The point in the camera coordinate system to be converted.
+ * @return The corresponding point in the Lidar coordinate system.
+ */
 cv::Point3f Locator::cameraToLidar(const cv::Point3f& point) const noexcept {
     cv::Matx31f camera_coor{point.x / zoom_factor_, point.y / zoom_factor_,
                             1.0f};
@@ -26,6 +60,16 @@ cv::Point3f Locator::cameraToLidar(const cv::Point3f& point) const noexcept {
     return cv::Point3f(lidar_coor(0), lidar_coor(1), lidar_coor(2));
 }
 
+/**
+ * @brief Converts a point from the Lidar coordinate system to the camera
+ * coordinate system.
+ *
+ * This function takes a point in the Lidar coordinate system and applies the
+ * necessary transformations to convert it to the camera coordinate system.
+ *
+ * @param point The point in the Lidar coordinate system to be converted.
+ * @return The corresponding point in the camera coordinate system.
+ */
 cv::Point3f Locator::lidarToCamera(const cv::Point3f& point) const noexcept {
     cv::Matx41f lidar_coor{point.x, point.y, point.z, 1.0f};
     cv::Matx31f camera_coor =
@@ -36,6 +80,37 @@ cv::Point3f Locator::lidarToCamera(const cv::Point3f& point) const noexcept {
                        camera_coor(2));
 }
 
+/**
+ * @brief Constructs a Locator object with the specified parameters.
+ *
+ * This constructor initializes a Locator object with the given parameters,
+ * including image dimensions, camera intrinsic matrix, Lidar-to-camera
+ * transformation matrix, world-to-camera transformation matrix, zoom factor,
+ * scale factor, queue size, depth difference thresholds, cluster tolerance,
+ * minimum and maximum cluster sizes, and maximum distance.
+ *
+ * @param image_width The width of the image.
+ * @param image_height The height of the image.
+ * @param intrinsic The camera intrinsic matrix.
+ * @param lidar_to_camera The transformation matrix from Lidar to camera
+ * coordinates.
+ * @param world_to_camera The transformation matrix from world to camera
+ * coordinates.
+ * @param zoom_factor The zoom factor to apply to the image, which is used to
+ * shrink the size of depth image in order to accelerate speed of processing.
+ * @param scale_factor The scale factor to apply to the image, which is used to
+ * enlarge roi to capture more possible points.
+ * @param queue_size The size of the queue of depth images.
+ * @param min_depth_diff The minimum depth difference for point cloud
+ * differencing.
+ * @param max_depth_diff The maximum depth difference for point cloud
+ * differencing.
+ * @param cluster_tolerance The cluster tolerance for point cloud clustering.
+ * @param min_cluster_size The minimum cluster size for point cloud clustering.
+ * @param max_cluster_size The maximum cluster size for point cloud clustering.
+ * @param max_distance The maximum distance threshold of x-coordinate for point
+ * cloud processing.
+ */
 Locator::Locator(int image_width, int image_height,
                  const cv::Matx33f& intrinsic,
                  const cv::Matx44f& lidar_to_camera,
@@ -74,6 +149,16 @@ Locator::Locator(int image_width, int image_height,
     extraction_.setMaxClusterSize(max_cluster_size);
 }
 
+/**
+ * @brief Updates the Locator with a new point cloud.
+ *
+ * This method updates the Locator with a new point cloud. It processes the
+ * input point cloud to generate depth images, perform differencing with the
+ * background depth image, and updates the depth image of difference between the
+ * background image and current images stored in a queue.
+ *
+ * @param cloud The input point cloud.
+ */
 void Locator::update(const pcl::PointCloud<pcl::PointXYZ>& cloud) noexcept {
     depth_image_.setTo(0);
     diff_depth_image_.setTo(0);
@@ -132,6 +217,14 @@ void Locator::update(const pcl::PointCloud<pcl::PointXYZ>& cloud) noexcept {
         });
 }
 
+/**
+ * @brief Performs clustering on the differencing point cloud.
+ *
+ * This method performs clustering on the differencing point cloud generated
+ * from the depth images. It clears previous cluster data, extracts clusters
+ * using the Euclidean Cluster Extraction algorithm, and updates the cluster
+ * indices and index-cluster mapping.
+ */
 void Locator::cluster() noexcept {
     diff_cloud_->clear();
     cluster_indices_.clear();
@@ -168,6 +261,16 @@ void Locator::cluster() noexcept {
     }
 }
 
+/**
+ * @brief Searches for the robot within the specified region of interest.
+ *
+ * This method searches for the robot within the specified region of interest
+ * (ROI) by analyzing the differencing depth image. It identifies candidate
+ * points within the ROI, associates them with clusters, and determines the
+ * location of the robot based on the largest cluster of points.
+ *
+ * @param robot The robot object.
+ */
 void Locator::search(Robot& robot) const noexcept {
     if (!robot.rect().has_value()) {
         return;
@@ -205,11 +308,37 @@ void Locator::search(Robot& robot) const noexcept {
     robot.setLocation(lidarToWorld(location));
 }
 
+/**
+ * @brief Searches for robots within the specified vector of robots.
+ *
+ * This method searches for robots within the specified vector of Robot objects
+ * by invoking the `search` method for each individual robot in parallel. It
+ * updates the location of each robot based on the analysis of the differencing
+ * depth image.
+ *
+ * @param robots The vector of Robot objects to search for.
+ */
 void Locator::search(std::vector<Robot>& robots) const noexcept {
     std::for_each(std::execution::par_unseq, robots.begin(), robots.end(),
                   [this](Robot& robot) { search(robot); });
 }
 
+/**
+ * @brief Applies zoom and scale transformations to the input rectangle.
+ *
+ * This method applies zoom and scale transformations to the input rectangle. It
+ * calculates the zoomed and scaled dimensions and position of the rectangle
+ * based on the zoom factor and scale factor specified during Locator
+ * initialization. The resulting rectangle is clipped to fit within the zoomed
+ * image dimensions.
+ *
+ * @param rect The input rectangle to be transformed.
+ * @return The transformed rectangle after applying zoom and scale.
+ *
+ * @note The `zoom` factor is used to shrink the size of depth image in order to
+ * accelerate speed of processing, And the `scale` factor is used to enlarge roi
+ * to capture more possible points.
+ */
 cv::Rect Locator::zoomAndScale(const cv::Rect& rect) const noexcept {
     const cv::Rect image_rect(0, 0, image_width_zoomed_, image_height_zoomed_);
     auto center_x = rect.x * zoom_factor_ + rect.width * zoom_factor_ * 0.5f;

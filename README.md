@@ -14,7 +14,7 @@
 
 **<div align="center">哈尔滨工业大学 竞技机器人队 视觉组</div>**
 
-# <div align="center"> &nbsp;&nbsp;雷达📡</div>
+# <div align="center"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;雷达📡</div>
 
 **<div align="center">核心库</div>**
 
@@ -32,12 +32,12 @@
 
 ### <div align="center"> 2. 性能🚀 </div>
 
-得益于使用 CUDA 进行前后处理，以及使用 TensorRT 进行模型的推理，我们保证了雷达的性能。我们使用训练后的 yolov8m 作为机器人和装甲板的识别网络，对一次完整的机器人检测、跟踪与定位进行**计时⏱️**，得到数据如下：
+得益于使用 CUDA 进行前后处理，以及使用 TensorRT 进行模型的推理，我们保证了**较快的处理速度**。具体而言，我们使用训练后的 yolov8m 作为机器人和装甲板的识别网络，使用 CUDA 版本为 12.3、TensorRT 版本为 8.6，对一次完整的机器人检测、跟踪与定位进行**计时⏱️**，得到数据如下：
 
 * 在 NVIDIA GeForce GTX 1650, AMD Ryzen 7 4800H 上，平均时间为**32ms**；
 * 在 NVIDIA GeForce RTX 3060Ti, 11th Gen Intel Core i5-11600KF 上，平均时间为**11ms**。
 
-有关优化的具体方法，可以查看[此文档](./doc/优化寄录.md)。
+有关优化的具体实现，可以查看[此文档](./doc/优化寄录.md)。
 
 ### <div align="center"> 3. 安装🔨 </div>
 
@@ -50,6 +50,8 @@
 * 为了确保顺利编译，建议安装 TBB, VTK 库；
 
 #### <div align="center"> 3.2 编译与安装🛠️  </div>
+
+输入以下命令进行代码的**获取**、**编译**、**安装**与**卸载**：
 
 ```sh
 # clone from website
@@ -70,7 +72,7 @@ sudo make uninstall
 
 #### <div align="center"> 3.3 使用👻  </div>
 
-成功安装后，使用如下方式即可引入全部头文件，以及命名空间：
+成功安装后，使用如下方式即可引入全部头文件以及命名空间：
 
 ```cpp
 #include <RMRadar/radar.h>

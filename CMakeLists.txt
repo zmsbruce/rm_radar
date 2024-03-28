@@ -66,3 +66,5 @@ install(
     FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
     DESTINATION lib/cmake/${PROJECT_NAME}
 )
+
+add_custom_target(uninstall COMMAND xargs rm -vf < install_manifest.txt ) 

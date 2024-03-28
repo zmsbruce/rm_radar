@@ -1,5 +1,5 @@
 find_package(OpenCV REQUIRED)
-find_package(PCL REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io kdtree segmentation)
 find_package(VTK)
 
 add_library(locator SHARED

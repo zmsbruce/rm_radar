@@ -1,6 +1,6 @@
-find_package(TensorRT REQUIRED)
+find_package(TensorRT REQUIRED VERSION 8.5)
 find_package(OpenCV REQUIRED)
-find_package(CUDAToolkit REQUIRED)
+find_package(CUDAToolkit REQUIRED VERSION 12.0)
 find_package(TBB REQUIRED)
 
 add_library(detector SHARED

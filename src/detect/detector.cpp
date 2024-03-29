@@ -27,23 +27,13 @@ namespace radar {
 
 using namespace radar::detect;
 
-//! We utilize locked page memory to hold the preprocessed data of input images.
-//! Allocating this type of memory is a demanding process in terms of time,
-//! which is why we allocate it at the construction phase. The exact size of
-//! this memory is indeterminate, so we initially establish certain parameters
-//! based on an estimate of the input field picture's size (we assume that the
-//! total size of detected car images will be less than that of the field
-//! picture). These parameters are adjustable to fit specific requirements or
-//! situations.
-constexpr int kImageWidth{2592};
-constexpr int kImageHeight{2048};
-
 /**
  * @brief Constructs a Detector object with the specified parameters.
  * @param engine_path The path to the engine file.
  * @param classes The number of classes in detection.
  * @param max_batch_size The maximum batch size.
  * @param opt_barch_size The optimized batch size of `std::optional<int>` type.
+ * @param image_size The size of input image or images as bytes.
  * @param nms_thresh The threshold in nms suppression.
  * @param input_width The input width.
  * @param input_height The input height.
@@ -55,9 +45,10 @@ constexpr int kImageHeight{2048};
  */
 Detector::Detector(std::string_view engine_path, int classes,
                    int max_batch_size, std::optional<int> opt_batch_size,
-                   float nms_thresh, float conf_thresh, int input_width,
-                   int input_height, std::string_view input_name,
-                   int input_channels, int opt_level)
+                   size_t image_size, float nms_thresh, float conf_thresh,
+                   int input_width, int input_height,
+                   std::string_view input_name, int input_channels,
+                   int opt_level)
     : input_width_{input_width},
       input_height_{input_height},
       input_channels_{input_channels},
@@ -137,10 +128,7 @@ Detector::Detector(std::string_view engine_path, int classes,
     output_anchors_ = output_tensor_.dims().d[2];
 
     // Allocate host and device memory
-    CUDA_CHECK(cudaHostAlloc(
-        &image_ptr_,
-        kImageWidth * kImageHeight * input_channels * sizeof(unsigned char),
-        cudaHostAllocMapped));
+    CUDA_CHECK(cudaHostAlloc(&image_ptr_, image_size, cudaHostAllocMapped));
     CUDA_CHECK(cudaMalloc(&dev_resize_ptr_,
                           input_height * input_width * input_channels *
                               max_batch_size * sizeof(unsigned char)));

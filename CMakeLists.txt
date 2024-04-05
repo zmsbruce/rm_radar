@@ -13,8 +13,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Ofast -DNDEBUG -flto -ffast-math -march=native
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG -Wall -Wextra")
 
 set(CMAKE_CUDA_ARCHITECTURES "52;61;75;86")
-set(CMAKE_CUDA_STANDARD 20)
-set(CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr")
+set(CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr --std=c++20")
 set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0") 
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3 --use_fast_math")
 
@@ -25,6 +24,7 @@ enable_testing()
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(samples)
+add_subdirectory(third-party)
 
 set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include/${PROJECT_NAME}")
 set(${PROJECT_NAME}_LIBRARIES "${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}")

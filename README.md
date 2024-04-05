@@ -57,8 +57,11 @@
 # clone from website
 git clone https://github.com/zmsbruce/rm_radar.git
 
-# compile
+# fetch submodule
 cd rm_radar
+git submodule update --init --recursive
+
+# compile
 mkdir build && cd build
 cmake ..
 make

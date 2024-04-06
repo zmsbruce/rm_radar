@@ -85,19 +85,24 @@ class DBSCAN {
         int cluster_id = 1;
 
         for (size_t i = 0; i < points.size(); ++i) {
+            // Ignores point that has been classified
             if (cluster_indices[i] != kUnclassified) {
                 continue;
             }
+
             auto neighbor_indices = calculateNeighbors(i, points);
+
+            // Marks the point as noise if its number of neighbors is not enough
             if (neighbor_indices.size() < min_point_size_) {
                 cluster_indices[i] = kNoise;
                 continue;
             }
 
-            // Mark the point as part of the cluster
+            // Marks the point as part of the cluster
             cluster_indices[i] = cluster_id;
 
-            // Expand the cluster from the neighbors
+            // Expands the cluster from the neighbors
+            // Uses a stack to alternate recursive call to avoid stack overflow
             std::stack<size_t> stack;
             for (size_t neighbor_index : neighbor_indices) {
                 if (cluster_indices[neighbor_index] == kUnclassified) {
@@ -106,7 +111,7 @@ class DBSCAN {
                 }
             }
 
-            // Iteratively expand the cluster
+            // Iteratively expands the cluster
             while (!stack.empty()) {
                 size_t current_index = stack.top();
                 stack.pop();
@@ -123,7 +128,7 @@ class DBSCAN {
                 }
             }
 
-            // Move to the next cluster
+            // Moves to the next cluster
             cluster_id++;
         }
 
@@ -174,6 +179,7 @@ class DBSCAN {
                              (p1.z - p2.z) * (p1.z - p2.z));
         }
     }
+
     size_t min_point_size_;
     float epsilon_;
 };

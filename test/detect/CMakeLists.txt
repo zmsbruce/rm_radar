@@ -13,6 +13,8 @@ target_link_libraries(detect_test PRIVATE
     PkgConfig::FFI
 )
 
-add_test(NAME DetectTest 
-         COMMAND detect_test 
-         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+add_test(
+    NAME DetectTest 
+    COMMAND detect_test 
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/bin
+)

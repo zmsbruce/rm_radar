@@ -5,6 +5,7 @@
 #include "locate/cluster.h"
 
 TEST(LocateTest, TestCluster) {
+    using namespace radar::locate;
     std::vector<cv::Point2f> points{
         {0.0, 0.0},  {0.5, 0.0},  {1.0, 0.0},  {0.0, 0.5},  {0.5, 0.5},
         {1.0, 0.5},  {0.0, 1.0},  {0.5, 1.0},  {1.0, 1.0},  {10.0, 0.0},
@@ -18,7 +19,7 @@ TEST(LocateTest, TestCluster) {
                                      2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3};
 
     DBSCAN dbscan(4, 1.0f);
-    auto result = dbscan.cluster(std::span(points));
+    auto result = dbscan.run(std::span(points));
 
     ASSERT_EQ(cluster_indices.size(), result.size());
     for (size_t i = 0; i < cluster_indices.size(); ++i) {

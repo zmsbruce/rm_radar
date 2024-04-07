@@ -17,6 +17,8 @@
 #include <stack>
 #include <vector>
 
+namespace radar::locate {
+
 const int kNoise = 0;
 const int kUnclassified = -1;
 
@@ -79,7 +81,7 @@ class DBSCAN {
      * @return A `std::vector<int>` containing the cluster index for each point.
      */
     template <Point T>
-    std::vector<int> cluster(const std::span<T>& points) {
+    std::vector<int> run(const std::span<T>& points) {
         std::vector<int> cluster_indices(points.size(), kUnclassified);
 
         int cluster_id = 1;
@@ -183,3 +185,5 @@ class DBSCAN {
     size_t min_point_size_;
     float epsilon_;
 };
+
+}  // namespace radar::locate

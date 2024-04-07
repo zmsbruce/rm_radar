@@ -116,9 +116,8 @@ Locator::Locator(int image_width, int image_height,
                  const cv::Matx44f& lidar_to_camera,
                  const cv::Matx44f& world_to_camera, float zoom_factor,
                  float scale_factor, size_t queue_size, float min_depth_diff,
-                 float max_depth_diff, float cluster_tolerance,
-                 float min_cluster_size, float max_cluster_size,
-                 float max_distance)
+                 float max_depth_diff, float cluster_epsilon,
+                 size_t min_cluster_point_num, float max_distance)
     : image_width_{image_width},
       image_height_{image_height},
       zoom_factor_{zoom_factor},
@@ -131,22 +130,16 @@ Locator::Locator(int image_width, int image_height,
       min_depth_diff_{min_depth_diff},
       max_depth_diff_{max_depth_diff},
       max_distance_{max_distance},
-      diff_cloud_{new pcl::PointCloud<pcl::PointXYZ>()},
-      search_tree_{new pcl::search::KdTree<pcl::PointXYZ>()} {
+      dbscan_cluster_{min_cluster_point_num, cluster_epsilon} {
     intrinsic_inv_ = intrinsic.inv();
     cv::Matx44f camera_to_lidar = lidar_to_camera.inv();
     camera_to_lidar_rotate_ = camera_to_lidar.get_minor<3, 3>(0, 0);
     camera_to_lidar_translate_ = camera_to_lidar.get_minor<3, 1>(0, 3);
     camera_to_world_transform_ = world_to_camera.inv();
-    depth_image_ =
-        cv::Mat::zeros(image_height_zoomed_, image_width_zoomed_, CV_32F);
-    background_depth_image_ =
-        cv::Mat::zeros(image_height_zoomed_, image_width_zoomed_, CV_32F);
-    diff_depth_image_ =
-        cv::Mat::zeros(image_height_zoomed_, image_width_zoomed_, CV_32F);
-    extraction_.setClusterTolerance(cluster_tolerance);
-    extraction_.setMinClusterSize(min_cluster_size);
-    extraction_.setMaxClusterSize(max_cluster_size);
+    depth_image_.create(image_height_zoomed_, image_width_zoomed_, CV_32F);
+    background_depth_image_.create(image_height_zoomed_, image_width_zoomed_,
+                                   CV_32F);
+    diff_depth_image_.create(image_height_zoomed_, image_width_zoomed_, CV_32F);
 }
 
 /**
@@ -218,19 +211,21 @@ void Locator::update(const pcl::PointCloud<pcl::PointXYZ>& cloud) noexcept {
 }
 
 /**
- * @brief Performs clustering on the differencing point cloud.
+ * @brief Clusters points based on depth values from a differential depth image.
  *
- * This method performs clustering on the differencing point cloud generated
- * from the depth images. It clears previous cluster data, extracts clusters
- * using the Euclidean Cluster Extraction algorithm, and updates the cluster
- * indices and index-cluster mapping.
+ * This method iterates over the differential depth image stored in
+ * `diff_depth_image_` and collects non-zero points into a vector. Each point
+ * contains the column (x), the row (y), and the depth value (z) from the depth
+ * image. These points are then clustered using the DBSCAN algorithm implemented
+ * in `dbscan_cluster_`, and then stored in an image
+ *
+ * @note This method is marked noexcept, which indicates that it does not throw
+ * exceptions.
  */
 void Locator::cluster() noexcept {
-    diff_cloud_->clear();
-    cluster_indices_.clear();
-    pixel_index_map_.clear();
-    index_cluster_map_.clear();
+    cluster_map_.clear();
 
+    std::vector<cv::Point3f> points;
     for (int i = 0; i < diff_depth_image_.rows; ++i) {
         const float* image_row = diff_depth_image_.ptr<float>(i);
         for (int j = 0; j < diff_depth_image_.cols; ++j) {
@@ -238,26 +233,17 @@ void Locator::cluster() noexcept {
             if (iszero(value)) {
                 continue;
             }
-            auto point = cameraToLidar(cv::Point3f(j, i, value));
-            diff_cloud_->emplace_back(point.x, point.y, point.z);
-            pixel_index_map_[std::make_pair(i, j)] = diff_cloud_->size() - 1;
+            points.emplace_back(cv::Point3f(j, i, value));
         }
     }
 
-    if (diff_cloud_->empty()) {
-        return;
-    }
-
-    search_tree_->setInputCloud(diff_cloud_);
-    extraction_.setSearchMethod(search_tree_);
-    extraction_.setInputCloud(diff_cloud_);
-    extraction_.extract(cluster_indices_);
-
-    for (size_t i = 0; i < cluster_indices_.size(); ++i) {
-        const auto& indices{cluster_indices_[i]};
-        for (int index : indices.indices) {
-            index_cluster_map_[index] = i;
-        }
+    auto indices = dbscan_cluster_.run(std::span(points));
+    for (size_t i = 0; i < points.size(); ++i) {
+        cv::Point3f point = points[i];
+        int index = indices[i];
+        cluster_map_.emplace(
+            cv::Point2i(static_cast<int>(point.x), static_cast<int>(point.y)),
+            index);
     }
 }
 
@@ -286,10 +272,7 @@ void Locator::search(Robot& robot) const noexcept {
             if (iszero(depth)) {
                 continue;
             }
-            int index = pixel_index_map_.at(std::make_pair(v, u));
-            int cluster_id = index_cluster_map_.contains(index)
-                                 ? index_cluster_map_.at(index)
-                                 : -1;
+            int cluster_id = cluster_map_.at(cv::Point2i(u, v));
             candidates[cluster_id].emplace_back(
                 cameraToLidar(cv::Point3f(u, v, depth)));
         }

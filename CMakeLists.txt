@@ -24,7 +24,6 @@ enable_testing()
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(samples)
-add_subdirectory(third-party)
 
 set(${PROJECT_NAME}_INCLUDE_DIRS "${CMAKE_INSTALL_PREFIX}/include/${PROJECT_NAME}")
 set(${PROJECT_NAME}_LIBRARIES "${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}")

@@ -1,72 +1,64 @@
 #pragma once
 
-#include <numeric>
-#include <opencv2/opencv.hpp>
-
-#include "data_type.h"
-#include "detect/detection.h"
-#include "kalman_filter.h"
-
-namespace radar {
-
-class Robot;
-
-}  // namespace radar
+#include <Eigen/Dense>
 
 namespace radar::track {
 
-DETECTBOX xyah(float x, float y, float width, float height);
-DETECTBOX xyah(const cv::Rect& rect);
-DETECTBOX xyah(const Detection& detection);
-DETECTBOX xyah(const Robot& robot);
-
-DETECTBOX tlwh(float x, float y, float width, float height);
-DETECTBOX tlwh(const cv::Rect& rect);
-DETECTBOX tlwh(const Detection& detection);
-DETECTBOX tlwh(const Robot& robot);
-
-FEATURE feature(const std::vector<Detection>& detections);
-FEATURE feature(const Robot& robot);
-
-}  // namespace radar::track
-
-namespace radar {
-
-class Robot;
-
 enum class TrackState { Tentative, Confirmed, Deleted };
 
-/**
- * @brief A single target track with state space `(x, y, a, h)` and associated
- * velocities, where `(x, y)` is the center of the bounding box, `a` is the
- * aspect ratio and `h` is the height.
- *
- */
 class Track {
    public:
-    Track(track::KAL_MEAN& mean, track::KAL_COVA& covariance, int track_id,
-          int n_init, int max_age, const track::FEATURE& feature);
-    void predit(track::KalmanFilter* kf);
-    void update(track::KalmanFilter* const kf, const Robot& robot);
-    void mark_missed();
-    bool is_confirmed() const;
-    bool is_deleted() const;
-    bool is_tentative() const;
-    track::DETECTBOX to_tlwh() const;
-    int time_since_update;
-    int track_id;
-    track::FEATURESS features;
-    track::KAL_MEAN mean;
-    track::KAL_COVA covariance;
+    Track(const Eigen::VectorXf& mean, const Eigen::MatrixXf& covariance,
+          const Eigen::VectorXf& feature, int track_id, int n_init,
+          int max_age);
 
-    int hits;
-    int age;
-    int _n_init;
-    int _max_age;
-    TrackState state;
+    inline bool isConfirmed() const noexcept {
+        return state_ == TrackState::Confirmed;
+    }
+
+    inline bool isTentative() const noexcept {
+        return state_ == TrackState::Tentative;
+    }
+
+    inline bool isDeleted() const noexcept {
+        return state_ == TrackState::Deleted;
+    }
+
+    inline void setTrack(TrackState state) noexcept { state_ = state; }
+
+    inline void updateFeature(const Eigen::VectorXf& feature) {
+        features_.conservativeResize(features_.rows(), features_.cols() + 1);
+        features_.col(features_.cols() - 1) = feature;
+    }
 
    private:
-    void featuresAppendOne(const track::FEATURE& f);
+    Track() = delete;
+    Eigen::VectorXf mean_;
+    Eigen::MatrixXf covariance_;
+    Eigen::MatrixXf features_;
+    int track_id_;
+    int n_init_;
+    int max_age_;
+    int hits_;
+    int age_;
+    int time_since_update_;
+    TrackState state_;
 };
 
-}  // namespace radar
+Track::Track(const Eigen::VectorXf& mean, const Eigen::MatrixXf& covariance,
+             const Eigen::VectorXf& feature, int track_id, int n_init,
+             int max_age)
+    : mean_{mean},
+      covariance_{covariance},
+      features_{feature.size(), 1},
+      track_id_{track_id},
+      n_init_{n_init},
+      max_age_{max_age},
+      hits_{1},
+      age_{1},
+      time_since_update_{0},
+      state_{TrackState::Tentative} {
+    features_.col(0) = feature;
+}
+
+}  // namespace radar::track

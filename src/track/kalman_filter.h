@@ -16,6 +16,7 @@
 #include <Eigen/Dense>
 #include <functional>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 namespace radar::track {
@@ -148,90 +149,120 @@ class KalmanFilter final : public Kalman<StateSize, MeasurementSize> {
 };
 
 /**
- * @brief Extended Kalman Filter class
+ * @class ExtendedKalmanFilter
+ * @brief Implementation of an extended Kalman filter.
  *
- * This class implements an Extended Kalman Filter for non-linear state
- * estimation. It uses non-linear state transition and observation functions to
- * perform the predict and update steps of the Kalman filter algorithm.
+ * This class implements an extended Kalman filter (EKF) for nonlinear state
+ * estimation.
  *
- * @tparam StateSize The size of the state vector (the number of state
- * variables).
- * @tparam MeasurementSize The size of the measurement vector (the number of
- * measurements).
+ * @tparam StateSize The size of the state vector.
+ * @tparam MeasurementSize The size of the measurement vector.
+ * @tparam Args Variadic template for additional arguments for transition
+ * functions.
  */
-template <int StateSize, int MeasurementSize>
+template <int StateSize, int MeasurementSize, typename... Args>
 class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
    public:
     using StateTransitionFunction =
         std::function<Eigen::Matrix<float, StateSize, StateSize>(
-            const Eigen::Matrix<float, StateSize, 1>&, float)>;
+            const Eigen::Matrix<float, StateSize, 1>&, Args...)>;
+
     using ObservationFunction = std::function<
         std::pair<Eigen::Matrix<float, MeasurementSize, 1>,
                   Eigen::Matrix<float, MeasurementSize, StateSize>>(
             const Eigen::Matrix<float, StateSize, 1>&)>;
 
     /**
-     * @brief Constructs a new Extended Kalman Filter object
+     * @brief Constructor for the extended Kalman filter.
      *
-     * @param initial_state Initial state estimate vector.
-     * @param initial_covariance Initial covariance matrix of the state
-     * estimate.
-     * @param state_transition_function State transition matrix.
-     * @param process_noise Covariance matrix of the process noise.
-     * @param observation_function Function for the observation.
-     * @param observation_noise Covariance matrix of the observation noise.
+     * Initializes the filter with the initial state, covariance, process noise,
+     * and observation noise matrices.
+     *
+     * @param initial_state The initial state vector.
+     * @param initial_covariance The initial state covariance matrix.
+     * @param process_noise The process noise covariance matrix.
+     * @param observation_noise The observation noise covariance matrix.
      */
     ExtendedKalmanFilter(
         const Eigen::Matrix<float, StateSize, 1>& initial_state,
         const Eigen::Matrix<float, StateSize, StateSize>& initial_covariance,
-        const StateTransitionFunction& state_transition_function,
         const Eigen::Matrix<float, StateSize, StateSize>& process_noise,
-        const ObservationFunction& observation_function,
         const Eigen::Matrix<float, MeasurementSize, MeasurementSize>&
             observation_noise)
         : Kalman<StateSize, MeasurementSize>(initial_state, initial_covariance),
-          state_transition_function_(state_transition_function),
           process_noise_(process_noise),
-          observation_function_(observation_function),
           observation_noise_(observation_noise) {}
 
     /**
-     * @brief Sets time duration and predicts the next state estimate and
-     * covariance.
+     * @brief Predicts the next state of the filter.
      *
-     * Uses the state transition function and process noise to predict the next
-     * state and covariance.
+     * This method predicts the next state based on the current state and the
+     * state transition function.
      *
-     * @param dt time duration used in state transition function.
+     * @param state_transition_function The state transition function.
+     * @param args Additional arguments for the state transition function.
      */
-    void predict(float dt) {
-        dt_ = dt;
-        predict();
+    void predict(const StateTransitionFunction& state_transition_function,
+                 Args... args) {
+        transition_matrix_ = std::apply(state_transition_function,
+                                        std::make_tuple(this->state_, args...));
+        this->state_ = transition_matrix_ * this->state_;
+        this->covariance_ = transition_matrix_ * this->covariance_ *
+                                transition_matrix_.transpose() +
+                            process_noise_;
     }
 
     /**
-     * @brief Updates the state estimate and covariance with a new measurement
+     * @brief Updates the filter with a new measurement.
      *
-     * Uses the observation function and observation noise to incorporate a new
-     * measurement into the state estimate.
+     * This method updates the filter state based on a new measurement and the
+     observation function.
+     *
+     * @param measurement The new measurement vector.
+     * @param observation_function The observation function.
+     */
+    void update(const Eigen::Matrix<float, MeasurementSize, 1>& measurement,
+                const ObservationFunction& observation_function) {
+        std::tie(predicted_measurement_, observation_matrix_) =
+            observation_function(this->state_);
+        update(measurement);
+    }
+
+   private:
+    /**
+     * @brief Internal predict method that performs the Kalman filter predict
+     * step.
+     *
+     */
+    void predict() override {
+        this->state_ = transition_matrix_ * this->state_;
+        this->covariance_ = transition_matrix_ * this->covariance_ *
+                                transition_matrix_.transpose() +
+                            process_noise_;
+    }
+
+    /**
+     * @brief Internal update method that performs the Kalman filter update
+     * step.
+     *
+     * This method updates the filter based on the predicted measurement and
+     * measurement residual.
      *
      * @param measurement The new measurement vector.
      */
     void update(
         const Eigen::Matrix<float, MeasurementSize, 1>& measurement) override {
-        const auto [predicted_measurement, measurement_jacobian] =
-            observation_function_(this->state_);
         const Eigen::Matrix<float, MeasurementSize, 1> measurement_residual =
-            measurement - predicted_measurement;
+            measurement - predicted_measurement_;
         const Eigen::Matrix<float, MeasurementSize, MeasurementSize>
-            innovation_covariance = measurement_jacobian * this->covariance_ *
-                                        measurement_jacobian.transpose() +
+            innovation_covariance = observation_matrix_ * this->covariance_ *
+                                        observation_matrix_.transpose() +
                                     observation_noise_;
 
         // Here we use a solver for numerical stability instead of calculating
         // the inverse
         const Eigen::Matrix<float, StateSize, MeasurementSize> kalman_gain =
-            this->covariance_ * measurement_jacobian.transpose() *
+            this->covariance_ * observation_matrix_.transpose() *
             innovation_covariance.ldlt().solve(
                 Eigen::Matrix<float, MeasurementSize,
                               MeasurementSize>::Identity());
@@ -241,30 +272,15 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
         const Eigen::Matrix<float, StateSize, StateSize> identity_matrix =
             Eigen::Matrix<float, StateSize, StateSize>::Identity();
         this->covariance_ =
-            (identity_matrix - kalman_gain * measurement_jacobian) *
+            (identity_matrix - kalman_gain * observation_matrix_) *
             this->covariance_;
     }
 
-   private:
-    /**
-     * @brief Predicts the next state estimate and covariance
-     *
-     * Uses the state transition function and process noise to predict the next
-     * state and covariance.
-     */
-    void predict() override {
-        auto transition_matrix = state_transition_function_(this->state_, dt_);
-        this->state_ = transition_matrix * this->state_;
-        this->covariance_ = transition_matrix * this->covariance_ *
-                                transition_matrix.transpose() +
-                            process_noise_;
-    }
-
-    StateTransitionFunction state_transition_function_;
+    Eigen::Matrix<float, StateSize, StateSize> transition_matrix_;
     Eigen::Matrix<float, StateSize, StateSize> process_noise_;
-    ObservationFunction observation_function_;
+    Eigen::Matrix<float, MeasurementSize, StateSize> observation_matrix_;
     Eigen::Matrix<float, MeasurementSize, MeasurementSize> observation_noise_;
-    float dt_;
+    Eigen::Matrix<float, MeasurementSize, 1> predicted_measurement_;
 };
 
 }  // namespace radar::track

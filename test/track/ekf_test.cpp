@@ -13,17 +13,18 @@ class ExtendedKalmanFilterTest : public ::testing::Test {
     Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance;
     Eigen::Matrix<float, kStateSize, kStateSize> process_noise;
     Eigen::Matrix<float, kMeasurementSize, kMeasurementSize> observation_noise;
-    ExtendedKalmanFilter<kStateSize, kMeasurementSize>::StateTransitionFunction
+    ExtendedKalmanFilter<kStateSize, kMeasurementSize,
+                         float>::StateTransitionFunction
         state_transition_function;
-    ExtendedKalmanFilter<kStateSize, kMeasurementSize>::ObservationFunction
-        observation_function;
+    ExtendedKalmanFilter<kStateSize, kMeasurementSize,
+                         float>::ObservationFunction observation_function;
 
     void SetUp() override {
         initial_state << 0, 0, 0, 0;
         initial_covariance << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1;
         state_transition_function =
             []([[maybe_unused]] const Eigen::Matrix<float, kStateSize, 1>&
-                   _state,
+                   state,
                float dt) {
                 Eigen::Matrix<float, kStateSize, kStateSize> state_jacobian;
                 state_jacobian << 1, 0, dt, 0, 0, 1, 0, dt, 0, 0, 1, 0, 0, 0, 0,
@@ -45,16 +46,15 @@ class ExtendedKalmanFilterTest : public ::testing::Test {
 };
 
 TEST_F(ExtendedKalmanFilterTest, PredictionStep) {
-    ExtendedKalmanFilter<kStateSize, kMeasurementSize> filter(
-        initial_state, initial_covariance, state_transition_function,
-        process_noise, observation_function, observation_noise);
+    ExtendedKalmanFilter<kStateSize, kMeasurementSize, float> filter(
+        initial_state, initial_covariance, process_noise, observation_noise);
 
     Eigen::Vector2f input;
     input << 0.5, 0.5;
 
     float dt = 1.0f;
-    filter.predict(dt);
-    filter.update(input);
+    filter.predict(state_transition_function, dt);
+    filter.update(input, observation_function);
 
     Eigen::Matrix<float, kStateSize, 1> expected_state;
     Eigen::Matrix<float, kStateSize, kStateSize> expected_covariance;

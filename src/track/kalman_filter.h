@@ -139,13 +139,14 @@ class KalmanFilter final : public Kalman<StateSize, MeasurementSize> {
             this->covariance_;
     }
 
-   private:
-    KalmanFilter() = delete;  // Prevents creating an empty KalmanFilter object.
-
+   protected:
     Eigen::Matrix<float, StateSize, StateSize> transition_matrix_;
     Eigen::Matrix<float, StateSize, StateSize> process_noise_;
     Eigen::Matrix<float, MeasurementSize, StateSize> observation_matrix_;
     Eigen::Matrix<float, MeasurementSize, MeasurementSize> observation_noise_;
+
+   private:
+    KalmanFilter() = delete;  // Prevents creating an empty KalmanFilter object.
 };
 
 /**
@@ -167,6 +168,9 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
         std::function<Eigen::Matrix<float, StateSize, StateSize>(
             const Eigen::Matrix<float, StateSize, 1>&, Args...)>;
 
+    using ProcessNoiseFunction =
+        std::function<Eigen::Matrix<float, StateSize, StateSize>(Args...)>;
+
     using ObservationFunction = std::function<
         std::pair<Eigen::Matrix<float, MeasurementSize, 1>,
                   Eigen::Matrix<float, MeasurementSize, StateSize>>(
@@ -180,32 +184,33 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
      *
      * @param initial_state The initial state vector.
      * @param initial_covariance The initial state covariance matrix.
-     * @param process_noise The process noise covariance matrix.
      * @param observation_noise The observation noise covariance matrix.
      */
     ExtendedKalmanFilter(
         const Eigen::Matrix<float, StateSize, 1>& initial_state,
         const Eigen::Matrix<float, StateSize, StateSize>& initial_covariance,
-        const Eigen::Matrix<float, StateSize, StateSize>& process_noise,
         const Eigen::Matrix<float, MeasurementSize, MeasurementSize>&
             observation_noise)
         : Kalman<StateSize, MeasurementSize>(initial_state, initial_covariance),
-          process_noise_(process_noise),
           observation_noise_(observation_noise) {}
 
     /**
      * @brief Predicts the next state of the filter.
      *
-     * This method predicts the next state based on the current state and the
-     * state transition function.
+     * This method predicts the next state based on the current state, the
+     * process noise function and the state transition function.
      *
      * @param state_transition_function The state transition function.
+     * @param process_noise_function The process noise function
      * @param args Additional arguments for the state transition function.
      */
     void predict(const StateTransitionFunction& state_transition_function,
+                 const ProcessNoiseFunction& process_noise_function,
                  Args... args) {
         transition_matrix_ = std::apply(state_transition_function,
                                         std::make_tuple(this->state_, args...));
+        process_noise_ =
+            std::apply(process_noise_function, std::make_tuple(args...));
         this->state_ = transition_matrix_ * this->state_;
         this->covariance_ = transition_matrix_ * this->covariance_ *
                                 transition_matrix_.transpose() +
@@ -228,7 +233,16 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
         update(measurement);
     }
 
+   protected:
+    Eigen::Matrix<float, StateSize, StateSize> transition_matrix_;
+    Eigen::Matrix<float, StateSize, StateSize> process_noise_;
+    Eigen::Matrix<float, MeasurementSize, StateSize> observation_matrix_;
+    Eigen::Matrix<float, MeasurementSize, MeasurementSize> observation_noise_;
+
    private:
+    ExtendedKalmanFilter() =
+        delete;  // Prevents creating an empty ExtendedKalmanFilter object.
+
     /**
      * @brief Internal predict method that performs the Kalman filter predict
      * step.
@@ -276,10 +290,6 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
             this->covariance_;
     }
 
-    Eigen::Matrix<float, StateSize, StateSize> transition_matrix_;
-    Eigen::Matrix<float, StateSize, StateSize> process_noise_;
-    Eigen::Matrix<float, MeasurementSize, StateSize> observation_matrix_;
-    Eigen::Matrix<float, MeasurementSize, MeasurementSize> observation_noise_;
     Eigen::Matrix<float, MeasurementSize, 1> predicted_measurement_;
 };
 

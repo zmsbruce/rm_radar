@@ -11,7 +11,8 @@ class ExtendedKalmanFilterTest : public ::testing::Test {
 
     Eigen::Matrix<float, kStateSize, 1> initial_state;
     Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance;
-    Eigen::Matrix<float, kStateSize, kStateSize> process_noise;
+    ExtendedKalmanFilter<kStateSize, kMeasurementSize,
+                         float>::ProcessNoiseFunction process_noise_function;
     Eigen::Matrix<float, kMeasurementSize, kMeasurementSize> observation_noise;
     ExtendedKalmanFilter<kStateSize, kMeasurementSize,
                          float>::StateTransitionFunction
@@ -31,7 +32,12 @@ class ExtendedKalmanFilterTest : public ::testing::Test {
                     1;
                 return state_jacobian;
             };
-        process_noise << 0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0.1;
+        process_noise_function = []([[maybe_unused]] float dt) {
+            Eigen::Matrix<float, kStateSize, kStateSize> process_noise;
+            process_noise << 0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0,
+                0.1;
+            return process_noise;
+        };
         observation_noise << 0.1, 0, 0, 0.1;
         observation_function =
             [](const Eigen::Matrix<float, kStateSize, 1>& state) {
@@ -47,13 +53,13 @@ class ExtendedKalmanFilterTest : public ::testing::Test {
 
 TEST_F(ExtendedKalmanFilterTest, PredictionStep) {
     ExtendedKalmanFilter<kStateSize, kMeasurementSize, float> filter(
-        initial_state, initial_covariance, process_noise, observation_noise);
+        initial_state, initial_covariance, observation_noise);
 
     Eigen::Vector2f input;
     input << 0.5, 0.5;
 
     float dt = 1.0f;
-    filter.predict(state_transition_function, dt);
+    filter.predict(state_transition_function, process_noise_function, dt);
     filter.update(input, observation_function);
 
     Eigen::Matrix<float, kStateSize, 1> expected_state;

@@ -16,6 +16,8 @@
 #include <limits>
 #include <vector>
 
+namespace radar::track {
+
 /**
  * @brief Runs the auction algorithm to assign tasks to agents based on the
  * provided value matrix.
@@ -120,3 +122,5 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
 
     return assignment;
 }
+
+}  // namespace radar::track

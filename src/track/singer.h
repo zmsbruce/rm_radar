@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <cmath>
+
 #include "kalman_filter.h"
 
 namespace radar::track {

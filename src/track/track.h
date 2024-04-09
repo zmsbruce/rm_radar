@@ -2,26 +2,25 @@
 
 #include <Eigen/Dense>
 #include <chrono>
-#include <cmath>
 #include <memory>
 #include <opencv2/opencv.hpp>
+#include <stdexcept>
 
 #include "features.h"
 #include "singer.h"
 
 namespace radar::track {
 
-enum class TrackState { Tentative, Confirmed, Deleted };
-
 class Track {
    public:
+    enum class TrackState { Tentative, Confirmed, Deleted };
     using TimePoint = std::chrono::high_resolution_clock::time_point;
 
     Track(const cv::Point3f& location, const Eigen::VectorXf& feature,
           const TimePoint& time, int track_id, int init_thresh, int miss_thresh,
           float max_accelaration, float accelaration_correlation_time,
           const cv::Point3f& observation_noise)
-        : features_{feature.size(), 1},
+        : features_{feature},
           timestamp_{time},
           track_id_{track_id},
           init_count_{0},
@@ -29,8 +28,6 @@ class Track {
           init_thresh_{init_thresh},
           miss_thresh_{miss_thresh},
           state_{TrackState::Tentative} {
-        features_.col(0) = feature;
-
         const Eigen::Matrix<float, kStateSize, 1> initial_state =
             Eigen::Matrix<float, kStateSize, 1>::Zero();
         const Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance =
@@ -56,7 +53,7 @@ class Track {
         return state_ == TrackState::Deleted;
     }
 
-    inline void setTrack(TrackState state) noexcept { state_ = state; }
+    inline void setTrackState(TrackState state) noexcept { state_ = state; }
 
     void predict(const TimePoint& current_timestamp) {
         // update ekf
@@ -81,8 +78,7 @@ class Track {
 
     void update(const cv::Point3f& location, const Eigen::VectorXf& feature) {
         // update feature
-        features_.conservativeResize(features_.rows(), features_.cols() + 1);
-        features_.col(features_.cols() - 1) = feature;
+        features_.push_back(feature);
 
         Eigen::Matrix<float, kMeasurementSize, 1> measurement;
         measurement << location.x, location.y, location.z;
@@ -94,15 +90,14 @@ class Track {
             if (init_count_ >= init_thresh_) {
                 state_ = TrackState::Confirmed;
             }
-        } else if (isConfirmed()) {
-            miss_count_ = 0;
         }
+        miss_count_ = 0;
     }
 
    private:
     Track() = delete;
 
-    Eigen::MatrixXf features_;
+    Features features_;
     TimePoint timestamp_;
     int track_id_;
     int init_count_;

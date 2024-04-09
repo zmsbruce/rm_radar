@@ -3,6 +3,7 @@ find_package(Eigen3 REQUIRED)
 add_executable(track_test
     kf_test.cpp
     ekf_test.cpp
+    features_test.cpp
 )
 
 target_include_directories(track_test PRIVATE

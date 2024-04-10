@@ -66,8 +66,10 @@ void Robot::setDetection(const Detection& car,
  */
 void Robot::setTrack(const Track& track) noexcept {
     track_state_ = track.state();
-    label_ = track.label();
-    location_ = track.location();
+    if (track.isConfirmed()) {
+        label_ = track.label();
+        location_ = track.location();
+    }
 }
 
 /**

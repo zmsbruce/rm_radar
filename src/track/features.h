@@ -181,7 +181,14 @@ class Features {
      * @return The normalized feature of the feature vectors.
      */
     inline Eigen::VectorXf feature() const noexcept {
-        return features_.rowwise().sum() / features_.sum();
+        float sum = features_.sum();
+        Eigen::VectorXf feature(features_.rows());
+        if (iszero(sum)) {  // avoid division by zero
+            feature.setZero();
+        } else {
+            feature = features_.rowwise().sum() / sum;
+        }
+        return feature;
     }
 
     friend std::ostream& operator<<(std::ostream& os,

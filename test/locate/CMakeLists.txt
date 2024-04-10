@@ -1,7 +1,7 @@
 find_package(OpenCV REQUIRED)
 
 add_executable(locate_test
-    locate_test.cpp
+    cluster_test.cpp
 )
 
 target_include_directories(locate_test PRIVATE

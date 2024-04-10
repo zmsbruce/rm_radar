@@ -3,7 +3,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFI REQUIRED IMPORTED_TARGET libffi)
 
 add_executable(detect_test
-    detect_test.cu   
+    kernel_test.cu
+    detector_test.cpp
 )
 
 target_link_libraries(detect_test PRIVATE

@@ -11,19 +11,30 @@
 
 #include "robot.h"
 
+#include <cmath>
+#include <map>
+
 #include "track/track.h"
 
 namespace radar {
 
+using Track = track::Track;
+
 /**
- * @brief Constructor of the `Robot` class, initializes the object based on
- * detection results.
+ * @brief Set the detection variables of the robot, which includes the
+ * vector of armor detections as well as the label, confidence and bbox of
+ * the robot.
  *
  * @param car The detected car information.
- * @param armors Vector of detected armor information.
+ * @param armors Vector of detected armor infomation.
  */
-Robot::Robot(const Detection& car, const std::vector<Detection>& armors)
-    : armors_{armors} {
+void Robot::setDetection(const Detection& car,
+                         const std::vector<Detection>& armors) noexcept {
+    // Sets armor detections
+    armors_ = armors;
+
+    // Calculates the highest score and its label, calculating the confidence of
+    // the robot
     std::map<int, float> score_map;
     for (const auto& armor : armors) {
         score_map[armor.label] += armor.confidence;
@@ -36,9 +47,12 @@ Robot::Robot(const Detection& car, const std::vector<Detection>& armors)
         armors.begin(), armors.end(),
         [this](const Detection& armor) { return armor.label == label_; });
 
+    // Sets the bbox of car
     rect_ = cv::Rect2f(car.x, car.y, car.width, car.height);
 
-    assert(armors_.has_value());
+    // Sets the armor bboxes, adjusting their positions based on the position of
+    // the car
+    armors_ = armors;
     for (auto& armor : armors_.value()) {
         armor.x += rect_.x;
         armor.y += rect_.y;
@@ -46,27 +60,51 @@ Robot::Robot(const Detection& car, const std::vector<Detection>& armors)
 }
 
 /**
- * @brief Constructor of the `Robot` class, initializes the object based on
- * track information.
- * @param track The tracked information.
+ * @brief Sets the track state and the filtered location of the robot.
+ *
+ * @param track The track of the robot.
  */
-Robot::Robot(const Track& track) : track_state_{track.state} {
-    Eigen::Matrix<float, 1, 12, Eigen::RowMajor> sum =
-        track.features.colwise().sum();
-    sum.maxCoeff(&label_);
-
-    track::DETECTBOX detect_box = track.mean.leftCols(4);
-    detect_box(2) *= detect_box(3);
-    detect_box.leftCols(2) -= (detect_box.rightCols(2) / 2);
-    rect_ =
-        cv::Rect2f(detect_box(0), detect_box(1), detect_box(2), detect_box(3));
+void Robot::setTrack(const Track& track) noexcept {
+    track_state_ = track.state();
+    label_ = track.label();
+    location_ = track.location();
 }
 
 /**
- * @brief Overloaded output stream operator for the Robot class, printing label,
- * rect, confidence, state and location.
+ * @brief Gets the feature of the robot, which is a vector containing
+ * confidence of each class. If the robot has not been detected, return
+ * `std::nullopt`.
+ *
+ * @return The `std::optional` value of the feature vector.
+ */
+std::optional<Eigen::VectorXf> Robot::feature() const noexcept {
+    // Returns `std::nullopt` if it is not detected
+    if (!isDetected()) {
+        return std::nullopt;
+    }
+
+    // Iterates through all armors and sets the feature vector based on the
+    // label and confidence of each armor
+    Eigen::VectorXf feature(class_num_);
+    for (const auto& armor : armors_.value()) {
+        feature(static_cast<int>(armor.label)) += armor.confidence;
+    }
+
+    // Normalize the vector
+    float sum = feature.sum();
+    if (iszero(sum)) {  // avoid division by zero
+        return feature;
+    }
+    return feature / sum;
+}
+
+/**
+ * @brief Overloaded output stream operator for the Robot class, printing
+ * label, rect, confidence, state and location.
+ *
  * @param os The output stream.
  * @param robot The Robot object to be printed.
+ *
  * @return The output stream.
  */
 std::ostream& operator<<(std::ostream& os, const Robot& robot) {
@@ -83,10 +121,10 @@ std::ostream& operator<<(std::ostream& os, const Robot& robot) {
        << (robot.isDetected() ? std::to_string(robot.confidence_) : "None")
        << "\n";
     os << "    State: "
-       << (!robot.isTracked()                            ? "None"
-           : robot.track_state_ == TrackState::Confirmed ? "Confirmed"
-           : robot.track_state_ == TrackState::Tentative ? "Tentative"
-                                                         : "Deleted")
+       << (!robot.isTracked()                                    ? "None"
+           : robot.track_state_.value() == TrackState::Confirmed ? "Confirmed"
+           : robot.track_state_.value() == TrackState::Tentative ? "Tentative"
+                                                                 : "Deleted")
        << "\n";
     os << "    Location: "
        << (robot.isLocated()

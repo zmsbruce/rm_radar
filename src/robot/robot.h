@@ -1,8 +1,7 @@
 /**
  * @file robot.h
  * @author zmsbruce (zmsbruce@163.com)
- * @brief This file contains the definition and part of declaration of robot
- * class and its functions.
+ * @brief This file is the header of robot class and its functions.
  * @date 2024-03-22
  *
  * @copyright (c) 2024 HITCRT
@@ -13,11 +12,9 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <map>
-#include <opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
 #include <optional>
 #include <ostream>
-#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -25,7 +22,7 @@
 
 namespace radar {
 
-class Track;
+class track::Track;
 
 enum class TrackState;
 
@@ -61,49 +58,115 @@ class Robot {
    public:
     Robot() = default;
 
-    Robot(const Detection& car, const std::vector<Detection>& armors);
+    /**
+     * @brief Construct the `Robot` object with the number of classes.
+     *
+     * @param class_num The number of classes of detection, default to 12.
+     */
+    Robot(int class_num = 12) : class_num_(class_num) {}
 
-    Robot(const Track& track);
+    /**
+     * @brief Returns whether the robot is detected depending on whether the
+     * armors are set.
+     *
+     * @return `true` if he robot is detected, otherwise `false`.
+     */
+    inline bool isDetected() const noexcept { return armors_.has_value(); }
 
-    inline bool isDetected() const { return armors_.has_value(); }
+    /**
+     * @brief Returns whether the robot is tracked depending on whether the
+     * location is set.
+     *
+     * @return `true` if he robot is located, otherwise `false`.
+     */
+    inline bool isLocated() const noexcept { return location_.has_value(); }
 
-    inline bool isTracked() const { return track_state_.has_value(); }
+    /**
+     * @brief Returns whether the robot is tracked depending on whether the
+     * track state is set.
+     *
+     * @return `true` if he robot is tracked, otherwise `false`.
+     */
+    inline bool isTracked() const noexcept { return track_state_.has_value(); }
 
-    inline bool isLocated() const { return location_.has_value(); }
+    void setDetection(const Detection& car,
+                      const std::vector<Detection>& armors) noexcept;
 
+    void setTrack(const track::Track& track) noexcept;
+
+    /**
+     * @brief Sets the location of the robot.
+     *
+     * @param location The location of the robot.
+     */
     inline void setLocation(const cv::Point3f& location) noexcept {
         location_ = location;
     }
 
-    inline std::optional<int> label() const {
-        return isDetected() || isTracked() ? std::optional<int>(label_)
-                                           : std::nullopt;
+    /**
+     * @brief Gets the label of the robot. If the robot has not been detected,
+     * returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the label.
+     */
+    inline std::optional<int> label() const noexcept {
+        return isDetected() ? std::optional<int>(label_) : std::nullopt;
     }
 
-    inline std::optional<cv::Rect> rect() const {
-        return isDetected() || isTracked() ? std::optional<cv::Rect>(rect_)
-                                           : std::nullopt;
+    /**
+     * @brief Gets the detection bbox of the robot. If the robot has not been
+     * detected, returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the detection bbox.
+     */
+    inline std::optional<cv::Rect> rect() const noexcept {
+        return isDetected() ? std::optional<cv::Rect>(rect_) : std::nullopt;
     }
 
-    inline std::optional<float> confidence() const {
-        return isDetected() || isTracked() ? std::optional<float>(confidence_)
-                                           : std::nullopt;
+    /**
+     * @brief Gets the detection confidence of the robot. If the robot has not
+     * been detected, returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the detection confidence.
+     */
+    inline std::optional<float> confidence() const noexcept {
+        return isDetected() ? std::optional<float>(confidence_) : std::nullopt;
     }
 
-    inline std::optional<std::vector<Detection>> armors() const {
+    /**
+     * @brief Gets the armor detections of the robot. If the robot has not been
+     * detected, returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the armor detections.
+     */
+    inline std::optional<std::vector<Detection>> armors() const noexcept {
         return isDetected() ? std::optional<std::vector<Detection>>(armors_)
                             : std::nullopt;
     }
 
-    inline std::optional<TrackState> track_state() const {
+    /**
+     * @brief Gets the track state of the robot. If the robot has not been
+     * tracked, returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the track state.
+     */
+    inline std::optional<TrackState> track_state() const noexcept {
         return isTracked() ? std::optional<TrackState>(track_state_)
                            : std::nullopt;
     }
 
-    inline std::optional<cv::Point3f> location() const {
+    /**
+     * @brief Gets the detection bbox of the robot. If the robot has not been
+     * located, returns `std::nullopt`.
+     *
+     * @return The `std::optional` value of the location.
+     */
+    inline std::optional<cv::Point3f> location() const noexcept {
         return isLocated() ? std::optional<cv::Point3f>(location_)
                            : std::nullopt;
     }
+
+    std::optional<Eigen::VectorXf> feature() const noexcept;
 
     friend std::ostream& operator<<(std::ostream& os, const Robot& robot);
 
@@ -114,6 +177,7 @@ class Robot {
     cv::Rect2f rect_;
     int label_;
     float confidence_;
+    int class_num_ = 12;
 };
 
 }  // namespace radar

@@ -18,6 +18,8 @@
 
 namespace radar::track {
 
+constexpr int kNotMatched = -1;
+
 /**
  * @brief Runs the auction algorithm to assign tasks to agents based on the
  * provided value matrix.
@@ -59,7 +61,7 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
     }
 
     Eigen::VectorXf prices = Eigen::VectorXf::Zero(num_tasks);
-    std::vector<int> assignment(num_agents, -1);
+    std::vector<int> assignment(num_agents, kNotMatched);
     std::vector<bool> assigned_tasks(num_tasks, false);
 
     int iterations = 0;
@@ -74,11 +76,11 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
         bool any_assignment_changed = false;
 
         for (int agent = 0; agent < num_agents; ++agent) {
-            if (assignment[agent] != -1) {
+            if (assignment[agent] != kNotMatched) {
                 continue;
             }
 
-            int best_task = -1;
+            int best_task = kNotMatched;
             float best_value = -std::numeric_limits<float>::infinity();
             for (int task = 0; task < num_tasks; ++task) {
                 float value = value_matrix(agent, task) - prices(task);
@@ -88,7 +90,7 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
                 }
             }
 
-            if (best_task != -1) {
+            if (best_task != kNotMatched) {
                 // Increase the price for the best task
                 prices(best_task) += best_value;
 
@@ -96,7 +98,7 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
                 for (int other_agent = 0; other_agent < num_agents;
                      ++other_agent) {
                     if (assignment[other_agent] == best_task) {
-                        assignment[other_agent] = -1;
+                        assignment[other_agent] = kNotMatched;
                         break;
                     }
                 }
@@ -117,8 +119,9 @@ std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
     }
 
     // Set virtual task index to -1
-    std::for_each(assignment.begin(), assignment.end(),
-                  [&](int& val) { val = val >= num_tasks_real ? -1 : val; });
+    std::for_each(assignment.begin(), assignment.end(), [&](int& val) {
+        val = val >= num_tasks_real ? kNotMatched : val;
+    });
 
     return assignment;
 }

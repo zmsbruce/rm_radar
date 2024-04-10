@@ -72,6 +72,13 @@ class SingerEKF {
         ekf_.update(measurement, observation_);
     }
 
+    /**
+     * @brief Get the state of the filter.
+     *
+     * @return The state of the filter.
+     */
+    inline auto state() const { return ekf_.state(); }
+
    private:
     SingerEKF() = delete;
 

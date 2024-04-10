@@ -161,6 +161,29 @@ class Features {
      */
     inline int cols() const noexcept { return size_; }
 
+    /**
+     * @brief Gets the label of the feature vectors based on the maximum
+     * coefficient in the feature sums.
+     *
+     * @return The label (index of the maximum coefficient) of the feature
+     * vectors.
+     */
+    inline int label() const noexcept {
+        Eigen::VectorXf sum = features_.rowwise().sum();
+        int label;
+        sum.maxCoeff(&label);
+        return label;
+    }
+
+    /**
+     * @brief Gets the normalized feature of the feature vectors.
+     *
+     * @return The normalized feature of the feature vectors.
+     */
+    inline Eigen::VectorXf feature() const noexcept {
+        return features_.rowwise().sum() / features_.sum();
+    }
+
     friend std::ostream& operator<<(std::ostream& os,
                                     const Features& features) {
         os << features.features_.block(0, 0, features.rows(), features.cols());

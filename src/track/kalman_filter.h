@@ -42,9 +42,19 @@ class Kalman {
 
     virtual ~Kalman() = default;
 
-    inline auto state() { return state_; }
+    /**
+     * @brief Gets the state vector.
+     *
+     * @return The state vector.
+     */
+    inline auto state() const noexcept { return state_; }
 
-    inline auto covariance() { return covariance_; }
+    /**
+     * @brief Gets the covariance matrix.
+     *
+     * @return The covariance matrix.
+     */
+    inline auto covariance() const noexcept { return covariance_; }
 
    protected:
     Kalman(const Eigen::Matrix<float, StateSize, 1>& initial_state,

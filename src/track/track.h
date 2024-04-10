@@ -20,13 +20,15 @@
 #include "features.h"
 #include "singer.h"
 
-namespace radar::track {
+namespace radar {
 
 /**
  * @brief Enum representing the state of the track.
  *
  */
 enum class TrackState { Tentative, Confirmed, Deleted };
+
+namespace track {
 
 /**
  * @class Track
@@ -38,6 +40,7 @@ enum class TrackState { Tentative, Confirmed, Deleted };
  */
 class Track {
    public:
+    friend class Tracker;
     /**
      * @brief Constructs a Track object with the given initial parameters.
      *
@@ -45,42 +48,18 @@ class Track {
      * @param feature Initial feature vector associated with the track.
      * @param time Initial timestamp of the track.
      * @param track_id Unique identifier for the track.
-     * @param init_thresh Threshold for the number of consecutive detections to
-     * confirm the track.
-     * @param miss_thresh Threshold for the number of missed detections to
-     * delete the track.
-     * @param max_accelaration Maximum acceleration used in the motion model of
-     * the Kalman filter.
-     * @param accelaration_correlation_time Correlation time of the acceleration
-     * used in the motion model.
-     * @param observation_noise Observation noise for the Kalman filter
-     * measurements.
+     * @param filter Singer EKF model for the track.
      */
     Track(const cv::Point3f& location, const Eigen::VectorXf& feature,
           const std::chrono::high_resolution_clock::time_point& time,
-          int track_id, int init_thresh, int miss_thresh,
-          float max_accelaration, float accelaration_correlation_time,
-          const cv::Point3f& observation_noise)
+          int track_id, const SingerEKF& filter)
         : features_{feature},
           timestamp_{time},
           track_id_{track_id},
           init_count_{0},
           miss_count_{0},
-          init_thresh_{init_thresh},
-          miss_thresh_{miss_thresh},
-          state_{TrackState::Tentative} {
-        const Eigen::Matrix<float, kStateSize, 1> initial_state =
-            Eigen::Matrix<float, kStateSize, 1>::Zero();
-        const Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance =
-            Eigen::Matrix<float, kStateSize, kStateSize>::Identity() * 0.1f;
-        Eigen::Matrix<float, kMeasurementSize, kMeasurementSize>
-            observation_noise_mat;
-        observation_noise_mat << observation_noise.x, observation_noise.y,
-            observation_noise.z;
-        ekf_ = std::make_unique<SingerEKF>(
-            initial_state, initial_covariance, max_accelaration,
-            accelaration_correlation_time, observation_noise_mat);
-    }
+          state_{TrackState::Tentative},
+          filter_{filter} {}
 
     /**
      * @brief Determines if the track is confirmed.
@@ -107,15 +86,22 @@ class Track {
     }
 
     /**
+     * @brief Gets the current state of the track.
+     *
+     * @return The state of the track.
+     */
+    inline TrackState state() const noexcept { return state_; }
+
+    /**
      * @brief Sets the current state of the track.
      * @param state The new state to set for the track.
      */
-    inline void setTrackState(TrackState state) noexcept { state_ = state; }
+    inline void setState(TrackState state) noexcept { state_ = state; }
 
     /**
      * @brief Predicts the next state of the track using the Kalman filter.
-     * @param current_timestamp The current timestamp to which the prediction is
-     * made.
+     * @param current_timestamp The current timestamp to which the
+     * prediction is made.
      */
     void predict(const std::chrono::high_resolution_clock::time_point&
                      current_timestamp) {
@@ -123,17 +109,9 @@ class Track {
         float dt = static_cast<float>(
                        std::chrono::duration_cast<std::chrono::nanoseconds>(
                            current_timestamp - timestamp_)
-                           .count()) /
-                   1e9;
-        ekf_->predict(dt);
-
-        // update counter and state
-        if (isConfirmed()) {
-            miss_count_ += 1;
-            if (miss_count_ >= miss_thresh_) {
-                state_ = TrackState::Deleted;
-            }
-        }
+                           .count()) *
+                   1e-9;
+        filter_.predict(dt);
 
         // update timestamp
         timestamp_ = current_timestamp;
@@ -150,16 +128,34 @@ class Track {
 
         Eigen::Matrix<float, kMeasurementSize, 1> measurement;
         measurement << location.x, location.y, location.z;
-        ekf_->update(measurement);
+        filter_.update(measurement);
+    }
 
-        // update counter and state
-        if (isTentative()) {
-            init_count_ += 1;
-            if (init_count_ >= init_thresh_) {
-                state_ = TrackState::Confirmed;
-            }
-        }
-        miss_count_ = 0;
+    /**
+     * @brief Gets the label of the track based on the maximum coefficient
+     * in the feature sums.
+     *
+     * @return The label (index of the maximum coefficient) of the track.
+     */
+    inline int label() const noexcept { return features_.label(); }
+
+    /**
+     * @brief Gets the normalized feature of the track.
+     *
+     * @return The normalized feature of the track.
+     */
+    inline Eigen::VectorXf feature() const noexcept {
+        return features_.feature();
+    }
+
+    /**
+     * @brief Gets the location(x, y, z) of the track.
+     *
+     * @return the location of the track.
+     */
+    cv::Point3f location() const noexcept {
+        auto state = filter_.state();
+        return cv::Point3f(state(0), state(3), state(6));
     }
 
    private:
@@ -170,10 +166,10 @@ class Track {
     int track_id_;
     int init_count_;
     int miss_count_;
-    const int init_thresh_;
-    const int miss_thresh_;
     TrackState state_;
-    std::unique_ptr<SingerEKF> ekf_;
+    SingerEKF filter_;
 };
 
-}  // namespace radar::track
+}  // namespace track
+
+}  // namespace radar

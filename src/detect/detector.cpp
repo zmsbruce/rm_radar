@@ -1,8 +1,7 @@
 /**
  * @file detect.cpp
  * @author zmsbruce (zmsbruce@163.com)
- * @brief This file contains the definition of several classes and functions
- * related to object detection using NVIDIA TensorRT.
+ * @brief This file contains the definition of the Detector class.
  * @date 2024-03-06
  *
  * @copyright (c) 2024 HITCRT
@@ -12,6 +11,7 @@
 
 #include "detect/detector.h"
 
+#include <NvInferPlugin.h>
 #include <NvOnnxParser.h>
 
 #include <filesystem>

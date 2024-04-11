@@ -11,6 +11,7 @@
 
 #include "detect/detector.h"
 
+#include <NvInfer.h>
 #include <NvInferPlugin.h>
 #include <NvOnnxParser.h>
 
@@ -183,10 +184,13 @@ std::pair<std::shared_ptr<char[]>, size_t> Detector::serializeEngine(
 
     std::unique_ptr<nvinfer1::IBuilder> builder{
         nvinfer1::createInferBuilder(logger_)};
+    uint32_t flags = 0;
+#if NV_TENSORRT_MAJOR < 10
+    flags = 1U << static_cast<uint32_t>(
+                nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+#endif
     std::unique_ptr<nvinfer1::INetworkDefinition> network{
-        builder->createNetworkV2(
-            1U << static_cast<uint32_t>(
-                nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH))};
+        builder->createNetworkV2(flags)};
     std::unique_ptr<nvonnxparser::IParser> parser{
         nvonnxparser::createParser(*network, logger_)};
     if (!parser) {

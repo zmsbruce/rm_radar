@@ -1,21 +1,13 @@
-add_executable(sample_detect sample_detect.cpp)
+add_executable(sample sample.cpp)
 
-add_executable(sample_detect_track sample_detect_track.cpp)
-
-add_executable(sample_detect_locate sample_detect_locate.cpp)
-
-target_link_libraries(sample_detect PRIVATE
+target_link_libraries(sample PRIVATE
     detector
-)
-
-target_link_libraries(sample_detect_track PRIVATE
-    detector
+    locator
     tracker
     robot
 )
 
-target_link_libraries(sample_detect_locate PRIVATE
-    detector
-    robot
-    locator
+target_include_directories(sample PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/samples
 )

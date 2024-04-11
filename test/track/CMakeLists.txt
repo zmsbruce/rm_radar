@@ -4,6 +4,8 @@ add_executable(track_test
     kf_test.cpp
     ekf_test.cpp
     features_test.cpp
+    auction_test.cpp
+    singer_test.cpp
 )
 
 target_include_directories(track_test PRIVATE

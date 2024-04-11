@@ -110,7 +110,7 @@ class Robot {
      * @return The `std::optional` value of the label.
      */
     inline std::optional<int> label() const noexcept {
-        return isDetected() ? std::optional<int>(label_) : std::nullopt;
+        return isDetected() ? std::make_optional(label_) : std::nullopt;
     }
 
     /**
@@ -120,7 +120,7 @@ class Robot {
      * @return The `std::optional` value of the detection bbox.
      */
     inline std::optional<cv::Rect> rect() const noexcept {
-        return isDetected() ? std::optional<cv::Rect>(rect_) : std::nullopt;
+        return isDetected() ? std::make_optional(rect_) : std::nullopt;
     }
 
     /**
@@ -130,7 +130,7 @@ class Robot {
      * @return The `std::optional` value of the detection confidence.
      */
     inline std::optional<float> confidence() const noexcept {
-        return isDetected() ? std::optional<float>(confidence_) : std::nullopt;
+        return isDetected() ? std::make_optional(confidence_) : std::nullopt;
     }
 
     /**
@@ -140,7 +140,7 @@ class Robot {
      * @return The `std::optional` value of the armor detections.
      */
     inline std::optional<std::vector<Detection>> armors() const noexcept {
-        return isDetected() ? std::optional<std::vector<Detection>>(armors_)
+        return isDetected() ? std::make_optional(armors_.value())
                             : std::nullopt;
     }
 
@@ -151,7 +151,7 @@ class Robot {
      * @return The `std::optional` value of the track state.
      */
     inline std::optional<TrackState> track_state() const noexcept {
-        return isTracked() ? std::optional<TrackState>(track_state_)
+        return isTracked() ? std::make_optional(track_state_.value())
                            : std::nullopt;
     }
 
@@ -162,7 +162,7 @@ class Robot {
      * @return The `std::optional` value of the location.
      */
     inline std::optional<cv::Point3f> location() const noexcept {
-        return isLocated() ? std::optional<cv::Point3f>(location_)
+        return isLocated() ? std::make_optional(location_.value())
                            : std::nullopt;
     }
 

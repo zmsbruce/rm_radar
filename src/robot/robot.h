@@ -22,7 +22,7 @@
 
 namespace radar {
 
-class track::Track;
+class Track;
 
 enum class TrackState;
 
@@ -59,19 +59,14 @@ class Robot {
     Robot() = default;
 
     /**
-     * @brief Construct the `Robot` object with the number of classes.
-     *
-     * @param class_num The number of classes of detection, default to 12.
-     */
-    Robot(int class_num = 12) : class_num_(class_num) {}
-
-    /**
      * @brief Returns whether the robot is detected depending on whether the
-     * armors are set.
+     * armors are set and whether the number of classes is valid(>0).
      *
      * @return `true` if he robot is detected, otherwise `false`.
      */
-    inline bool isDetected() const noexcept { return armors_.has_value(); }
+    inline bool isDetected() const noexcept {
+        return armors_.has_value() && class_num_ > 0;
+    }
 
     /**
      * @brief Returns whether the robot is tracked depending on whether the
@@ -90,9 +85,10 @@ class Robot {
     inline bool isTracked() const noexcept { return track_state_.has_value(); }
 
     void setDetection(const Detection& car,
-                      const std::vector<Detection>& armors) noexcept;
+                      const std::vector<Detection>& armors,
+                      int classes) noexcept;
 
-    void setTrack(const track::Track& track) noexcept;
+    void setTrack(const Track& track) noexcept;
 
     /**
      * @brief Sets the location of the robot.
@@ -177,7 +173,7 @@ class Robot {
     cv::Rect2f rect_;
     int label_;
     float confidence_;
-    int class_num_ = 12;
+    int class_num_ = -1;
 };
 
 }  // namespace radar

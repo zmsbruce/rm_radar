@@ -27,6 +27,7 @@ using namespace track;
 /**
  * @brief Construct the Tracker class
  *
+ * @param observation_noise The observation noise(m).
  * @param init_thresh Times needed to convert a track from tentative to
  * confirmed.
  * @param miss_thresh Times needed to mark a confirmed track to deleted.
@@ -34,24 +35,23 @@ using namespace track;
  * model.
  * @param acceleration_correlation_time Acceleration correlation time
  * constant(tau) of the Singer-EKF model.
- * @param observation_noise The observation noise(m).
  * @param distance_weight The weight of distance which is needed in min-cost
  * matching.
  * @param feature_weight The weight of feature which is needed in min-cost
  * matching.
  * @param max_iter The maximum iteration time of the auction algorithm.
  */
-Tracker::Tracker(int init_thresh, int miss_thresh, float max_acceleration,
-                 float acceleration_correlation_time,
-                 const cv::Point3f& observation_noise, float distance_weight,
+Tracker::Tracker(const cv::Point3f& observation_noise, int init_thresh,
+                 int miss_thresh, float max_acceleration,
+                 float acceleration_correlation_time, float distance_weight,
                  float feature_weight, int max_iter)
     : init_thresh_{init_thresh},
       miss_thresh_{miss_thresh},
       max_acc_{max_acceleration},
       tau_{acceleration_correlation_time},
-      measurement_noise_{observation_noise},
-      feature_weight_{feature_weight},
       distance_weight_{distance_weight},
+      feature_weight_{feature_weight},
+      measurement_noise_{observation_noise},
       max_iter_{max_iter} {}
 
 /**
@@ -176,7 +176,7 @@ void Tracker::update(
                         timestamp, latest_id_++, max_acc_, tau_,
                         measurement_noise_);
             // Emplaces new track
-            tracks_.emplace_back(track);
+            tracks_.emplace_back(std::move(track));
             // Updates robot
             robot.setTrack(track);
         }

@@ -28,8 +28,6 @@ namespace radar {
  */
 enum class TrackState { Tentative, Confirmed, Deleted };
 
-namespace track {
-
 /**
  * @class Track
  * @brief Represents a track in a tracking system.
@@ -40,7 +38,7 @@ namespace track {
  */
 class Track {
    public:
-    friend class radar::Tracker;
+    friend class Tracker;
     /**
      * @brief Constructs a Track object with the given initial parameters.
      *
@@ -59,20 +57,22 @@ class Track {
           track_id_{track_id},
           init_count_{0},
           miss_count_{0},
-          state_{TrackState::Tentative} {
-        Eigen::Matrix<float, kStateSize, 1> initial_state;
+          state_{TrackState::Tentative},
+          filter_{nullptr} {
+        Eigen::Matrix<float, track::kStateSize, 1> initial_state;
         initial_state << location.x, 0, 0, location.y, 0, 0, location.z, 0, 0;
-        const Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance =
-            Eigen::Matrix<float, kStateSize, kStateSize>::Identity() * 0.1f;
-        Eigen::Matrix<float, kMeasurementSize, kMeasurementSize>
+        const Eigen::Matrix<float, track::kStateSize, track::kStateSize>
+            initial_covariance = Eigen::Matrix<float, track::kStateSize,
+                                               track::kStateSize>::Identity() *
+                                 0.1f;
+        Eigen::Matrix<float, track::kMeasurementSize, track::kMeasurementSize>
             observe_noise_mat;
         // clang-format off
         observe_noise_mat << observe_noise.x, 0, 0, 
                              0, observe_noise.y, 0, 
                              0, 0, observe_noise.z;
         // clang-format on 
-
-        filter_ = std::make_unique<SingerEKF>(initial_state, initial_covariance,
+        filter_ = std::make_unique<track::SingerEKF>(initial_state, initial_covariance,
                                               max_acc, tau, observe_noise_mat);
     }
 
@@ -141,7 +141,7 @@ class Track {
         // update feature
         features_.push_back(feature);
 
-        Eigen::Matrix<float, kMeasurementSize, 1> measurement;
+        Eigen::Matrix<float, track::kMeasurementSize, 1> measurement;
         measurement << location.x, location.y, location.z;
         filter_->update(measurement);
     }
@@ -176,15 +176,13 @@ class Track {
    private:
     Track() = delete;
 
-    Features features_;
+    track::Features features_;
     std::chrono::high_resolution_clock::time_point timestamp_;
     int track_id_;
     int init_count_;
     int miss_count_;
     TrackState state_;
-    std::unique_ptr<SingerEKF> filter_ = nullptr;
+    std::unique_ptr<track::SingerEKF> filter_;
 };
-
-}  // namespace track
 
 }  // namespace radar

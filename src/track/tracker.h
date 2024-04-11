@@ -22,10 +22,11 @@ namespace radar {
 
 class Tracker {
    public:
-    Tracker(int init_thresh, int miss_thresh, float max_acceleration,
-            float acceleration_correlation_time,
-            const cv::Point3f& observation_noise, float distance_weight,
-            float feature_weight, int max_iter = 100);
+    Tracker(const cv::Point3f& observation_noise, int init_thresh = 4,
+            int miss_thresh = 10, float max_acceleration = 2.0f,
+            float acceleration_correlation_time = 1.0f,
+            float distance_weight = 0.35f, float feature_weight = 0.65f,
+            int max_iter = 100);
 
     void update(
         std::vector<Robot>& robots,

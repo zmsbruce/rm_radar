@@ -18,8 +18,6 @@
 
 namespace radar {
 
-using Track = track::Track;
-
 /**
  * @brief Set the detection variables of the robot, which includes the
  * vector of armor detections as well as the label, confidence and bbox of
@@ -27,11 +25,16 @@ using Track = track::Track;
  *
  * @param car The detected car information.
  * @param armors Vector of detected armor infomation.
+ * @param classes The total number of labels.
  */
 void Robot::setDetection(const Detection& car,
-                         const std::vector<Detection>& armors) noexcept {
+                         const std::vector<Detection>& armors,
+                         int classes) noexcept {
     // Sets armor detections
     armors_ = armors;
+
+    // Sets classes
+    class_num_ = classes;
 
     // Calculates the highest score and its label, calculating the confidence of
     // the robot

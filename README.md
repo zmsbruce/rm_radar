@@ -43,7 +43,7 @@ _<div align="right">by zmsbruce</div>_
 
 #### <div align="center"> 3.1 依赖 🔃 </div>
 
-- 建议在 Linux 系统中编译和安装本项目；
+- 建议在 Ubuntu 20.04 或 22.04 下编译和安装本项目；
 - 代码基于 C++20 ，建议使用 GCC 11 或更高版本，或者 Clang 11 或更高版本；
 - 需要 CMake 版本不低于 3.19，以完整支持 CUDA Toolkit 包的获取与配置；
 - 需要 CUDA 版本不低于 12.0，TensorRT 版本不低于 8.5；

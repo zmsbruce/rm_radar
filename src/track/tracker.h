@@ -18,7 +18,7 @@
 #include "robot/robot.h"
 #include "track.h"
 
-namespace radar::track {
+namespace radar {
 
 class Tracker {
    public:
@@ -49,4 +49,4 @@ class Tracker {
     int latest_id_ = 0;
 };
 
-}  // namespace radar::track
+}  // namespace radar

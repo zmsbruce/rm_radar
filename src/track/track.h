@@ -40,7 +40,7 @@ namespace track {
  */
 class Track {
    public:
-    friend class Tracker;
+    friend class radar::Tracker;
     /**
      * @brief Constructs a Track object with the given initial parameters.
      *

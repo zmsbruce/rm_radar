@@ -20,7 +20,9 @@
 
 #include "auction.h"
 
-namespace radar::track {
+namespace radar {
+
+using namespace track;
 
 /**
  * @brief Construct the Tracker class
@@ -187,4 +189,4 @@ void Tracker::update(
     tracks_.erase(iter_end);
 }
 
-}  // namespace radar::track
+}  // namespace radar

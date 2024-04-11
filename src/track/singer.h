@@ -86,7 +86,9 @@ class SingerEKF {
     float max_a_;
     float tau_;
     EKF::StateTransitionFunction state_transition_ =
-        [this](const Eigen::Matrix<float, kStateSize, 1>& state, float dt) {
+        [this](
+            [[maybe_unused]] const Eigen::Matrix<float, kStateSize, 1>& state,
+            float dt) {
             Eigen::Matrix<float, kStateSize, kStateSize> transition_matrix =
                 Eigen::Matrix<float, kStateSize, kStateSize>::Identity();
             for (int i = 0; i < 3; ++i) {

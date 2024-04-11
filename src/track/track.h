@@ -52,14 +52,29 @@ class Track {
      */
     Track(const cv::Point3f& location, const Eigen::VectorXf& feature,
           const std::chrono::high_resolution_clock::time_point& time,
-          int track_id, const SingerEKF& filter)
+          int track_id, float max_acc, float tau,
+          const cv::Point3f observe_noise)
         : features_{feature},
           timestamp_{time},
           track_id_{track_id},
           init_count_{0},
           miss_count_{0},
-          state_{TrackState::Tentative},
-          filter_{filter} {}
+          state_{TrackState::Tentative} {
+        Eigen::Matrix<float, kStateSize, 1> initial_state;
+        initial_state << location.x, 0, 0, location.y, 0, 0, location.z, 0, 0;
+        const Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance =
+            Eigen::Matrix<float, kStateSize, kStateSize>::Identity() * 0.1f;
+        Eigen::Matrix<float, kMeasurementSize, kMeasurementSize>
+            observe_noise_mat;
+        // clang-format off
+        observe_noise_mat << observe_noise.x, 0, 0, 
+                             0, observe_noise.y, 0, 
+                             0, 0, observe_noise.z;
+        // clang-format on 
+
+        filter_ = std::make_unique<SingerEKF>(initial_state, initial_covariance,
+                                              max_acc, tau, observe_noise_mat);
+    }
 
     /**
      * @brief Determines if the track is confirmed.
@@ -111,7 +126,7 @@ class Track {
                            current_timestamp - timestamp_)
                            .count()) *
                    1e-9;
-        filter_.predict(dt);
+        filter_->predict(dt);
 
         // update timestamp
         timestamp_ = current_timestamp;
@@ -128,7 +143,7 @@ class Track {
 
         Eigen::Matrix<float, kMeasurementSize, 1> measurement;
         measurement << location.x, location.y, location.z;
-        filter_.update(measurement);
+        filter_->update(measurement);
     }
 
     /**
@@ -154,7 +169,7 @@ class Track {
      * @return the location of the track.
      */
     cv::Point3f location() const noexcept {
-        auto state = filter_.state();
+        auto state = filter_->state();
         return cv::Point3f(state(0), state(3), state(6));
     }
 
@@ -167,7 +182,7 @@ class Track {
     int init_count_;
     int miss_count_;
     TrackState state_;
-    SingerEKF filter_;
+    std::unique_ptr<SingerEKF> filter_ = nullptr;
 };
 
 }  // namespace track

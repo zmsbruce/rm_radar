@@ -23,8 +23,21 @@
 namespace radar::track {
 
 /**
- * @brief The Tracker class is responsible for managing and updating a set of
- * tracks based on observations of robots.
+ * @brief Construct the Tracker class
+ *
+ * @param init_thresh Times needed to convert a track from tentative to
+ * confirmed.
+ * @param miss_thresh Times needed to mark a confirmed track to deleted.
+ * @param max_acceleration Max acceleration(m/s^2) needed for the Singer-EKF
+ * model.
+ * @param acceleration_correlation_time Acceleration correlation time
+ * constant(tau) of the Singer-EKF model.
+ * @param observation_noise The observation noise(m).
+ * @param distance_weight The weight of distance which is needed in min-cost
+ * matching.
+ * @param feature_weight The weight of feature which is needed in min-cost
+ * matching.
+ * @param max_iter The maximum iteration time of the auction algorithm.
  */
 Tracker::Tracker(int init_thresh, int miss_thresh, float max_acceleration,
                  float acceleration_correlation_time,
@@ -37,8 +50,7 @@ Tracker::Tracker(int init_thresh, int miss_thresh, float max_acceleration,
       measurement_noise_{observation_noise},
       feature_weight_{feature_weight},
       distance_weight_{distance_weight},
-      max_iter_{max_iter},
-      init_filter_{initializeFilter()} {}
+      max_iter_{max_iter} {}
 
 /**
  * @brief Calculate the Euclidean distance between two points in 3D space.
@@ -86,24 +98,6 @@ float Tracker::calculateCost(const Track& track, const Robot& robot) {
     feature_score = (feature_score + 1.0f) / 2.0f;
 
     return distance_score * distance_weight_ + feature_score * feature_weight_;
-}
-
-/**
- * @brief Initialize the filter used for state estimation.
- *
- * @return SingerEKF The initialized extended Kalman filter.
- */
-SingerEKF Tracker::initializeFilter() const noexcept {
-    const Eigen::Matrix<float, kStateSize, 1> initial_state =
-        Eigen::Matrix<float, kStateSize, 1>::Zero();
-    const Eigen::Matrix<float, kStateSize, kStateSize> initial_covariance =
-        Eigen::Matrix<float, kStateSize, kStateSize>::Identity() * 0.1f;
-    Eigen::Matrix<float, kMeasurementSize, kMeasurementSize>
-        measurement_noise_mat;
-    measurement_noise_mat << measurement_noise_.x, measurement_noise_.y,
-        measurement_noise_.z;
-    return SingerEKF(initial_state, initial_covariance, max_acc_, tau_,
-                     measurement_noise_mat);
 }
 
 /**
@@ -177,7 +171,8 @@ void Tracker::update(
         // Ignore robots that are not detected or located
         if (robot.isDetected() && robot.isLocated()) {
             Track track(robot.location().value(), robot.feature().value(),
-                        timestamp, latest_id_++, init_filter_);
+                        timestamp, latest_id_++, max_acc_, tau_,
+                        measurement_noise_);
             // Emplaces new track
             tracks_.emplace_back(track);
             // Updates robot

@@ -37,8 +37,6 @@ class Tracker {
     static float calculateDistance(const cv::Point3f& p1,
                                    const cv::Point3f& p2);
 
-    SingerEKF initializeFilter() const noexcept;
-
     const int init_thresh_;
     const int miss_thresh_;
     const float max_acc_;
@@ -49,7 +47,6 @@ class Tracker {
     std::vector<Track> tracks_;
     const int max_iter_;
     int latest_id_ = 0;
-    const SingerEKF init_filter_;
 };
 
 }  // namespace radar::track

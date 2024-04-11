@@ -1,206 +1,192 @@
+/**
+ * @file tracker.cpp
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief The file implements the functions of class Tracker, which is
+ * responsible for managing and updating a set of tracks based on observations
+ * of robots.
+ * @date 2024-04-10
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #include "tracker.h"
 
-#include "linear_assignment.h"
-#include "nn_matching.h"
-#include "robot/robot.h"
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <numeric>
 
-using namespace std;
-using namespace radar::track;
+#include "auction.h"
 
 namespace radar {
 
-Tracker::Tracker(float max_cosine_distance, int nn_budget,
-                 float max_iou_distance, int max_age, int n_init) {
-    this->metric =
-        new NearNeighborDisMetric(NearNeighborDisMetric::METRIC_TYPE::cosine,
-                                  max_cosine_distance, nn_budget);
-    this->max_iou_distance = max_iou_distance;
-    this->max_age = max_age;
-    this->n_init = n_init;
+using namespace track;
 
-    this->kf = new KalmanFilter();
-    this->tracks_.clear();
-    this->_next_idx = 1;
+/**
+ * @brief Construct the Tracker class
+ *
+ * @param observation_noise The observation noise(m).
+ * @param init_thresh Times needed to convert a track from tentative to
+ * confirmed.
+ * @param miss_thresh Times needed to mark a confirmed track to deleted.
+ * @param max_acceleration Max acceleration(m/s^2) needed for the Singer-EKF
+ * model.
+ * @param acceleration_correlation_time Acceleration correlation time
+ * constant(tau) of the Singer-EKF model.
+ * @param distance_weight The weight of distance which is needed in min-cost
+ * matching.
+ * @param feature_weight The weight of feature which is needed in min-cost
+ * matching.
+ * @param max_iter The maximum iteration time of the auction algorithm.
+ */
+Tracker::Tracker(const cv::Point3f& observation_noise, int init_thresh,
+                 int miss_thresh, float max_acceleration,
+                 float acceleration_correlation_time, float distance_weight,
+                 float feature_weight, int max_iter)
+    : init_thresh_{init_thresh},
+      miss_thresh_{miss_thresh},
+      max_acc_{max_acceleration},
+      tau_{acceleration_correlation_time},
+      distance_weight_{distance_weight},
+      feature_weight_{feature_weight},
+      measurement_noise_{observation_noise},
+      max_iter_{max_iter} {}
+
+/**
+ * @brief Calculate the Euclidean distance between two points in 3D space.
+ *
+ * @param p1 The first point.
+ * @param p2 The second point.
+ * @return The Euclidean distance.
+ */
+float Tracker::calculateDistance(const cv::Point3f& p1, const cv::Point3f& p2) {
+    float x1 = p1.x, y1 = p1.y, z1 = p1.z;
+    float x2 = p2.x, y2 = p2.y, z2 = p2.z;
+    return std::sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) +
+                     (z1 - z2) * (z1 - z2));
 }
 
-void Tracker::predict() noexcept {
-    for (Track &track : tracks_) {
-        track.predit(kf);
+/**
+ * @brief Calculate the cost associated with matching a track to a robot
+ * observation.
+ *
+ * @param track The track for which to calculate the cost.
+ * @param robot The robot observation to be matched to the track.
+ * @return The calculated cost.
+ */
+float Tracker::calculateCost(const Track& track, const Robot& robot) {
+    if (!robot.isLocated() || !robot.isDetected()) {
+        return 0.0f;
     }
+
+    // calculate distance score
+    constexpr float acc_dis_thresh = 0.8f;
+    float distance =
+        calculateDistance(robot.location().value(), track.location());
+    float distance_score = distance < acc_dis_thresh ? 1.0f
+                           : distance < 2 * acc_dis_thresh
+                               ? -1.25f * distance + 2.0f
+                               : 0.0f;
+
+    // calculate feature score
+    auto feature_robot = robot.feature().value();
+    auto feature_track = track.feature();
+    assert(feature_robot.size() == feature_track.size());
+
+    float feature_score = feature_robot.dot(feature_track) /
+                          (feature_robot.norm() * feature_track.norm());
+    feature_score = (feature_score + 1.0f) / 2.0f;
+
+    return distance_score * distance_weight_ + feature_score * feature_weight_;
 }
 
-void Tracker::update(const std::vector<Robot> &robots) noexcept {
-    TRACHER_MATCHD res;
-    match(robots, res);
+/**
+ * @brief Update all tracks based on a new set of robot observations.
+ *
+ * @param robots The new robot observations.
+ * @param timestamp The timestamp of the observations.
+ */
+void Tracker::update(
+    std::vector<Robot>& robots,
+    const std::chrono::high_resolution_clock::time_point& timestamp) {
+    // Predicts tracks
+    std::for_each(tracks_.begin(), tracks_.end(),
+                  [&](Track& track) { track.predict(timestamp); });
 
-    vector<MATCH_DATA> &matches = res.matches;
-    for (MATCH_DATA &data : matches) {
-        int track_idx = data.first;
-        int detection_idx = data.second;
-        tracks_[track_idx].update(this->kf, robots[detection_idx]);
-    }
-    vector<int> &unmatched_tracks = res.unmatched_tracks;
-    for (int &track_idx : unmatched_tracks) {
-        this->tracks_[track_idx].mark_missed();
-    }
-    vector<int> &unmatched_detections = res.unmatched_detections;
-    for (int &detection_idx : unmatched_detections) {
-        this->initiate_track(robots[detection_idx]);
-    }
-    vector<Track>::iterator it;
-    for (it = tracks_.begin(); it != tracks_.end();) {
-        if ((*it).is_deleted())
-            it = tracks_.erase(it);
-        else
-            ++it;
-    }
-
-    vector<int> active_targets;
-    vector<TRACKER_DATA> tid_features;
-    for (Track &track : tracks_) {
-        if (track.is_confirmed() == false) continue;
-        FEATURESS last_feature;
-        last_feature.resize(1, 12);
-        last_feature.row(0) = track.features.row(track.features.rows() - 1);
-
-        active_targets.push_back(track.track_id);
-        tid_features.push_back(std::make_pair(track.track_id, last_feature));
-    }
-    this->metric->partial_fit(tid_features, active_targets);
-}
-
-void Tracker::match(const std::vector<Robot> &robots,
-                    track::TRACHER_MATCHD &res) {
-    vector<int> confirmed_tracks;
-    vector<int> unconfirmed_tracks;
-    int idx = 0;
-    for (Track &t : tracks_) {
-        if (t.is_confirmed())
-            confirmed_tracks.push_back(idx);
-        else
-            unconfirmed_tracks.push_back(idx);
-        idx++;
-    }
-
-    TRACHER_MATCHD matcha = linear_assignment::getInstance()->matching_cascade(
-        this, &Tracker::gated_matric, this->metric->mating_threshold,
-        this->max_age, this->tracks_, robots, confirmed_tracks);
-    vector<int> iou_track_candidates;
-    iou_track_candidates.assign(unconfirmed_tracks.begin(),
-                                unconfirmed_tracks.end());
-    vector<int>::iterator it;
-    for (it = matcha.unmatched_tracks.begin();
-         it != matcha.unmatched_tracks.end();) {
-        int idx = *it;
-        if (tracks_[idx].time_since_update == 1) {
-            iou_track_candidates.push_back(idx);
-            it = matcha.unmatched_tracks.erase(it);
-            continue;
+    // Sets the cost matrix and calculates min-cost matching
+    Eigen::MatrixXf cost_matrix(tracks_.size(), robots.size());
+    for (size_t track_id = 0; track_id < tracks_.size(); ++track_id) {
+        for (size_t robot_id = 0; robot_id < robots.size(); ++robot_id) {
+            cost_matrix(track_id, robot_id) =
+                calculateCost(tracks_[track_id], robots[robot_id]);
         }
-        ++it;
     }
-    TRACHER_MATCHD matchb = linear_assignment::getInstance()->min_cost_matching(
-        this, &Tracker::iou_cost, this->max_iou_distance, this->tracks_, robots,
-        iou_track_candidates, matcha.unmatched_detections);
+    auto match_result = auction(cost_matrix, max_iter_);
 
-    res.matches.assign(matcha.matches.begin(), matcha.matches.end());
-    res.matches.insert(res.matches.end(), matchb.matches.begin(),
-                       matchb.matches.end());
+    // Sets the tracks based on the match result
+    std::vector<int> matched_robot_indices;
+    for (size_t track_id = 0; track_id < match_result.size(); ++track_id) {
+        auto& track = tracks_[track_id];
 
-    res.unmatched_tracks.assign(matcha.unmatched_tracks.begin(),
-                                matcha.unmatched_tracks.end());
-    res.unmatched_tracks.insert(res.unmatched_tracks.end(),
-                                matchb.unmatched_tracks.begin(),
-                                matchb.unmatched_tracks.end());
-    res.unmatched_detections.assign(matchb.unmatched_detections.begin(),
-                                    matchb.unmatched_detections.end());
-}
-
-void Tracker::initiate_track(const Robot &robot) {
-    KAL_DATA data = kf->initiate(xyah(robot));
-    KAL_MEAN mean = data.first;
-    KAL_COVA covariance = data.second;
-
-    this->tracks_.push_back(Track(mean, covariance, this->_next_idx,
-                                  this->n_init, this->max_age, feature(robot)));
-    _next_idx += 1;
-}
-
-DYNAMICM Tracker::gated_matric(std::vector<Track> &tracks,
-                               const std::vector<Robot> &robots,
-                               const std::vector<int> &track_indices,
-                               const std::vector<int> &detection_indices) {
-    FEATURESS features(detection_indices.size(), k_feature_dim);
-    int pos = 0;
-    for (int i : detection_indices) {
-        features.row(pos++) = feature(robots[i]);
-    }
-    vector<int> targets;
-    for (int i : track_indices) {
-        targets.push_back(tracks[i].track_id);
-    }
-    DYNAMICM cost_matrix = this->metric->distance(features, targets);
-    DYNAMICM res = linear_assignment::getInstance()->gate_cost_matrix(
-        this->kf, cost_matrix, tracks, robots, track_indices,
-        detection_indices);
-    return res;
-}
-
-DYNAMICM
-Tracker::iou_cost(std::vector<Track> &tracks, const std::vector<Robot> &robots,
-                  const std::vector<int> &track_indices,
-                  const std::vector<int> &detection_indices) {
-    int rows = track_indices.size();
-    int cols = detection_indices.size();
-    DYNAMICM cost_matrix = Eigen::MatrixXf::Zero(rows, cols);
-    for (int i = 0; i < rows; i++) {
-        int track_idx = track_indices[i];
-        if (tracks[track_idx].time_since_update > 1) {
-            cost_matrix.row(i) = Eigen::RowVectorXf::Constant(cols, INFTY_COST);
-            continue;
+        int robot_id = match_result[track_id];
+        if (robot_id == kNotMatched) {
+            if (track.isTentative()) {
+                track.setState(TrackState::Deleted);
+            } else if (track.isConfirmed()) {
+                track.miss_count_ += 1;
+                if (track.miss_count_ >= miss_thresh_) {
+                    track.setState(TrackState::Deleted);
+                }
+            }
+        } else {
+            auto& robot = robots[robot_id];
+            // Updates track
+            track.update(robot.location().value(), robot.feature().value());
+            if (track.isTentative()) {
+                track.init_count_ += 1;
+                if (track.init_count_ >= init_thresh_) {
+                    track.setState(TrackState::Confirmed);
+                }
+                track.miss_count_ = 0;
+            }
+            // Updates robot
+            robot.setTrack(track);
+            // Appends to matched robot indices vector
+            matched_robot_indices.push_back(robot_id);
         }
-        DETECTBOX bbox = tracks[track_idx].to_tlwh();
-        int csize = detection_indices.size();
-        DETECTBOXSS candidates(csize, 4);
-        for (int k = 0; k < csize; k++)
-            candidates.row(k) = tlwh(robots[detection_indices[k]]);
-        Eigen::RowVectorXf rowV =
-            (1. - iou(bbox, candidates).array()).matrix().transpose();
-        cost_matrix.row(i) = rowV;
     }
-    return cost_matrix;
-}
 
-Eigen::VectorXf Tracker::iou(DETECTBOX &bbox, DETECTBOXSS &candidates) {
-    float bbox_tl_1 = bbox[0];
-    float bbox_tl_2 = bbox[1];
-    float bbox_br_1 = bbox[0] + bbox[2];
-    float bbox_br_2 = bbox[1] + bbox[3];
-    float area_bbox = bbox[2] * bbox[3];
-
-    Eigen::Matrix<float, -1, 2> candidates_tl;
-    Eigen::Matrix<float, -1, 2> candidates_br;
-    candidates_tl = candidates.leftCols(2);
-    candidates_br = candidates.rightCols(2) + candidates_tl;
-
-    int size = int(candidates.rows());
-    Eigen::VectorXf res(size);
-    for (int i = 0; i < size; i++) {
-        float tl_1 = std::max(bbox_tl_1, candidates_tl(i, 0));
-        float tl_2 = std::max(bbox_tl_2, candidates_tl(i, 1));
-        float br_1 = std::min(bbox_br_1, candidates_br(i, 0));
-        float br_2 = std::min(bbox_br_2, candidates_br(i, 1));
-
-        float w = br_1 - tl_1;
-        w = (w < 0 ? 0 : w);
-        float h = br_2 - tl_2;
-        h = (h < 0 ? 0 : h);
-        float area_intersection = w * h;
-        float area_candidates = candidates(i, 2) * candidates(i, 3);
-        res[i] = area_intersection /
-                 (area_bbox + area_candidates - area_intersection);
+    // Calculates unmatched robot indices
+    std::vector<int> unmatched_robot_indices(robots.size());
+    std::iota(unmatched_robot_indices.begin(), unmatched_robot_indices.end(),
+              0);
+    std::sort(matched_robot_indices.rbegin(), matched_robot_indices.rend());
+    for (int index : matched_robot_indices) {
+        unmatched_robot_indices.erase(unmatched_robot_indices.begin() + index);
     }
-    return res;
+
+    // Initializes tracks from unmatched robots
+    for (const auto& index : unmatched_robot_indices) {
+        auto& robot = robots[index];
+        // Ignore robots that are not detected or located
+        if (robot.isDetected() && robot.isLocated()) {
+            Track track(robot.location().value(), robot.feature().value(),
+                        timestamp, latest_id_++, max_acc_, tau_,
+                        measurement_noise_);
+            // Emplaces new track
+            tracks_.emplace_back(std::move(track));
+            // Updates robot
+            robot.setTrack(track);
+        }
+    }
+
+    // Removes deleted tracks
+    auto iter_end =
+        std::remove_if(tracks_.begin(), tracks_.end(),
+                       [](const Track& track) { return track.isDeleted(); });
+    tracks_.erase(iter_end);
 }
 
 }  // namespace radar

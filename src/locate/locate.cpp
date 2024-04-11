@@ -152,17 +152,23 @@ Locator::Locator(int image_width, int image_height,
  *
  * @param cloud The input point cloud.
  */
-void Locator::update(const pcl::PointCloud<pcl::PointXYZ>& cloud) noexcept {
+void Locator::update(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept {
     depth_image_.setTo(0);
     diff_depth_image_.setTo(0);
 
-    if (cloud.empty()) {
-        std::cerr << "no points in cloud." << std::endl;
+    if (!cloud) {
+        std::cerr << "cloud is null." << std::endl;
+        return;
+    }
+
+    if (cloud->empty()) {
+        std::cerr << "cloud is empty." << std::endl;
         return;
     }
 
     std::for_each(
-        std::execution::par_unseq, cloud.begin(), cloud.end(),
+        std::execution::par_unseq, cloud->begin(), cloud->end(),
         [this](const pcl::PointXYZ& point) {
             if (iszero(point.x) && iszero(point.y) && iszero(point.z)) {
                 return;

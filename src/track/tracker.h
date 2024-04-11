@@ -1,57 +1,53 @@
+/**
+ * @file tracker.h
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief This is a header file containing the definition of the Tracker class,
+ * which is responsible for managing and updating a set of tracks based on
+ * observations of robots, and its functions.
+ * @date 2024-04-10
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #pragma once
 
 #include <vector>
 
-#include "detect/detection.h"
-#include "kalman_filter.h"
-#include "nn_matching.h"
+#include "robot/robot.h"
 #include "track.h"
 
 namespace radar {
 
-class Robot;
-
 class Tracker {
    public:
-    Tracker(float max_cosine_distance, int nn_budget,
-            float max_iou_distance = 0.7, int max_age = 30, int n_init = 3);
+    Tracker(const cv::Point3f& observation_noise, int init_thresh = 4,
+            int miss_thresh = 10, float max_acceleration = 2.0f,
+            float acceleration_correlation_time = 1.0f,
+            float distance_weight = 0.35f, float feature_weight = 0.65f,
+            int max_iter = 100);
 
-    void predict() noexcept;
-
-    void update(const std::vector<Robot>& robots) noexcept;
-
-    inline std::vector<Track> tracks() { return tracks_; }
-
-    typedef track::DYNAMICM (Tracker::*GATED_METRIC_FUNC)(
-        std::vector<Track>& tracks, const std::vector<Robot>& robots,
-        const std::vector<int>& track_indices,
-        const std::vector<int>& detection_indices);
+    void update(
+        std::vector<Robot>& robots,
+        const std::chrono::high_resolution_clock::time_point& timestamp);
 
    private:
-    void match(const std::vector<Robot>& robots, track::TRACHER_MATCHD& res);
+    float calculateCost(const Track& track, const Robot& robot);
 
-    void initiate_track(const Robot& robot);
+    static float calculateDistance(const cv::Point3f& p1,
+                                   const cv::Point3f& p2);
 
-    track::DYNAMICM gated_matric(std::vector<Track>& tracks,
-                                 const std::vector<Robot>& robots,
-                                 const std::vector<int>& track_indices,
-                                 const std::vector<int>& detection_indices);
-
-    track::DYNAMICM iou_cost(std::vector<Track>& tracks,
-                             const std::vector<Robot>& robots,
-                             const std::vector<int>& track_indices,
-                             const std::vector<int>& detection_indices);
-
-    Eigen::VectorXf iou(track::DETECTBOX& bbox, track::DETECTBOXSS& candidates);
-
+    const int init_thresh_;
+    const int miss_thresh_;
+    const float max_acc_;
+    const float tau_;
+    float distance_weight_;
+    float feature_weight_;
+    const cv::Point3f measurement_noise_;
     std::vector<Track> tracks_;
-    track::NearNeighborDisMetric* metric;
-    float max_iou_distance;
-    int max_age;
-    int n_init;
-    float process_min_iou;
-    track::KalmanFilter* kf;
-    int _next_idx;
+    const int max_iter_;
+    int latest_id_ = 0;
 };
 
 }  // namespace radar

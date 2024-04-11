@@ -1,12 +1,7 @@
-find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 add_library(tracker SHARED
-    hungarian.cpp
-    kalman_filter.cpp
-    linear_assignment.cpp
-    nn_matching.cpp
-    track.cpp
     tracker.cpp
 )
 

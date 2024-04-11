@@ -63,7 +63,7 @@ class Locator {
             float cluster_epsilon = 15, size_t min_cluster_point_num = 10,
             float max_distance = 29300);
 
-    void update(const pcl::PointCloud<pcl::PointXYZ>& cloud) noexcept;
+    void update(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept;
 
     void cluster() noexcept;
 

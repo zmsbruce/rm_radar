@@ -22,10 +22,11 @@ namespace radar {
 
 class Tracker {
    public:
-    Tracker(const cv::Point3f& observation_noise, int init_thresh = 4,
-            int miss_thresh = 10, float max_acceleration = 2.0f,
+    Tracker(const cv::Point3f& observation_noise, int class_num,
+            int init_thresh = 4, int miss_thresh = 10,
+            float max_acceleration = 2.0f,
             float acceleration_correlation_time = 1.0f,
-            float distance_weight = 0.35f, float feature_weight = 0.65f,
+            float distance_weight = 0.40f, float feature_weight = 0.60f,
             int max_iter = 100);
 
     void update(
@@ -38,6 +39,7 @@ class Tracker {
     static float calculateDistance(const cv::Point3f& p1,
                                    const cv::Point3f& p2);
 
+    const int class_num_;
     const int init_thresh_;
     const int miss_thresh_;
     const float max_acc_;

@@ -28,6 +28,7 @@ using namespace track;
  * @brief Construct the Tracker class
  *
  * @param observation_noise The observation noise(m).
+ * @param class_num The number of classes.
  * @param init_thresh Times needed to convert a track from tentative to
  * confirmed.
  * @param miss_thresh Times needed to mark a confirmed track to deleted.
@@ -41,11 +42,12 @@ using namespace track;
  * matching.
  * @param max_iter The maximum iteration time of the auction algorithm.
  */
-Tracker::Tracker(const cv::Point3f& observation_noise, int init_thresh,
-                 int miss_thresh, float max_acceleration,
+Tracker::Tracker(const cv::Point3f& observation_noise, int class_num,
+                 int init_thresh, int miss_thresh, float max_acceleration,
                  float acceleration_correlation_time, float distance_weight,
                  float feature_weight, int max_iter)
-    : init_thresh_{init_thresh},
+    : class_num_{class_num},
+      init_thresh_{init_thresh},
       miss_thresh_{miss_thresh},
       max_acc_{max_acceleration},
       tau_{acceleration_correlation_time},
@@ -77,7 +79,7 @@ float Tracker::calculateDistance(const cv::Point3f& p1, const cv::Point3f& p2) {
  * @return The calculated cost.
  */
 float Tracker::calculateCost(const Track& track, const Robot& robot) {
-    if (!robot.isLocated() || !robot.isDetected()) {
+    if (!robot.isLocated()) {
         return 0.0f;
     }
 
@@ -91,7 +93,7 @@ float Tracker::calculateCost(const Track& track, const Robot& robot) {
                                : 0.0f;
 
     // calculate feature score
-    auto feature_robot = robot.feature().value();
+    auto feature_robot = robot.feature(class_num_);
     auto feature_track = track.feature();
     assert(feature_robot.size() == feature_track.size());
 
@@ -142,17 +144,20 @@ void Tracker::update(
             }
         } else {
             auto& robot = robots[robot_id];
-            // Updates track
-            track.update(robot.location().value(), robot.feature().value());
-            if (track.isTentative()) {
-                track.init_count_ += 1;
-                if (track.init_count_ >= init_thresh_) {
-                    track.setState(TrackState::Confirmed);
+            if (robot.isLocated()) {
+                // Updates track
+                track.update(robot.location().value(),
+                             robot.feature(class_num_));
+                if (track.isTentative()) {
+                    track.init_count_ += 1;
+                    if (track.init_count_ >= init_thresh_) {
+                        track.setState(TrackState::Confirmed);
+                    }
+                    track.miss_count_ = 0;
                 }
-                track.miss_count_ = 0;
+                // Updates robot
+                robot.setTrack(track);
             }
-            // Updates robot
-            robot.setTrack(track);
             // Appends to matched robot indices vector
             matched_robot_indices.push_back(robot_id);
         }
@@ -172,7 +177,7 @@ void Tracker::update(
         auto& robot = robots[index];
         // Ignore robots that are not detected or located
         if (robot.isDetected() && robot.isLocated()) {
-            Track track(robot.location().value(), robot.feature().value(),
+            Track track(robot.location().value(), robot.feature(class_num_),
                         timestamp, latest_id_++, max_acc_, tau_,
                         measurement_noise_);
             // Emplaces new track
@@ -183,10 +188,10 @@ void Tracker::update(
     }
 
     // Removes deleted tracks
-    auto iter_end =
+    tracks_.erase(
         std::remove_if(tracks_.begin(), tracks_.end(),
-                       [](const Track& track) { return track.isDeleted(); });
-    tracks_.erase(iter_end);
+                       [](const Track& track) { return track.isDeleted(); }),
+        tracks_.end());
 }
 
 }  // namespace radar

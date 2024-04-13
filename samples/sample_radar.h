@@ -57,7 +57,7 @@ class SampleRadar {
                 const cv::Matx44f lidar_to_camera,
                 const cv::Matx44f& world_to_camera,
                 const cv::Point3f& lidar_noise)
-        : image_size_(image_size_),
+        : image_size_(image_size),
           car_detector_(std::make_unique<Detector>(car_path, 1, 1)),
           armor_detector_(std::make_unique<Detector>(
               armor_path, kClassNum, kMaxBatchSize, kOptBatchSize)),

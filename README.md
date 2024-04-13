@@ -16,13 +16,11 @@
 
 # <div align="center"> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;雷达 📡</div>
 
-**<div align="center">核心库</div>**
-
 _<div align="right">by zmsbruce</div>_
 
 ### <div align="center"> 1. 简介 📓 </div>
 
-核心库包含目标的识别、定位和跟踪，目前**不包括串口通信、自主决策部分**。
+代码包含目标的识别、定位和跟踪，目前**不包括串口通信、自主决策部分**。
 
 - **识别 🔎**：使用神经网络，根据相机传来的场地图像，对机器人和装甲板进行识别，得到机器人的矩形框和类别；
 
@@ -37,7 +35,7 @@ _<div align="right">by zmsbruce</div>_
 - 在 NVIDIA GeForce GTX 1650, AMD Ryzen 7 4800H 上，平均时间为**32ms**；
 - 在 NVIDIA GeForce RTX 3060Ti, 11th Gen Intel Core i5-11600KF 上，平均时间为**11ms**。
 
-有关优化的具体实现，可以查看[此文档](./doc/CUDA优化.md)。
+此外，我们对**目标定位**和**跟踪**均进行了**优化**，以提升**速度**和**准确性**。有关优化的具体实现，可以查看 doc 目录下文档。
 
 ### <div align="center"> 3. 安装 🔨 </div>
 
@@ -63,6 +61,13 @@ cd rm_radar
 mkdir build && cd build
 cmake ..
 make
+
+# test
+ctest
+
+# run sample
+cd ../bin
+./sample
 
 # install
 sudo make install

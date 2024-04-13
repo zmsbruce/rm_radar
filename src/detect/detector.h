@@ -90,7 +90,7 @@ class Detector {
                       float conf_thresh = 0.25, int input_width = 640,
                       int input_height = 640,
                       std::string_view input_name = "images",
-                      int input_channels = 3, int opt_level = 5);
+                      int input_channels = 3, int opt_level = 3);
     ~Detector();
 
     /**

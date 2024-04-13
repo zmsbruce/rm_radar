@@ -14,6 +14,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <iostream>
 #include <stdexcept>
 
 namespace radar::track {
@@ -102,7 +103,11 @@ class Features {
 
         if (size_ >= capacity_) {
             capacity_ *= 2;
-            features_.conservativeResize(features_.rows(), capacity_);
+            Eigen::MatrixXf new_features(features_.rows(), capacity_);
+            new_features.setZero();
+            new_features.block(0, 0, features_.rows(), features_.cols()) =
+                features_;
+            std::swap(features_, new_features);
         }
         features_.col(size_++) = feature;
     }

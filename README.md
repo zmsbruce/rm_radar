@@ -81,7 +81,7 @@ sudo make uninstall
 using namespace radar;
 ```
 
-查看[示例代码](./samples/sample.cpp)可以帮助你更快速地了解和使用。
+查看[示例代码](./samples/sample_radar.h)可以帮助你更快速地了解和使用。
 
 > 注意：您建立的项目也需要**支持 C++20**，否则可能会发生编译相关错误。
 

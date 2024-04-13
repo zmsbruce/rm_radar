@@ -33,7 +33,6 @@ enum class TrackState;
  * corresponds to a specific robot type.
  */
 enum Label {
-    NoneType = -1,
     BlueHero = 0,
     BlueEngineer = 1,
     BlueInfantryThree = 2,
@@ -56,17 +55,15 @@ enum Label {
  */
 class Robot {
    public:
-    Robot() = default;
+    Robot(const Detection& car, const std::vector<Detection>& armors);
 
     /**
-     * @brief Returns whether the robot is detected depending on whether the
-     * armors are set and whether the number of classes is valid(>0).
+     * @brief Returns whether the robot is detected depending on
+     * whether the armors are set.
      *
      * @return `true` if he robot is detected, otherwise `false`.
      */
-    inline bool isDetected() const noexcept {
-        return armors_.has_value() && class_num_ > 0;
-    }
+    inline bool isDetected() const noexcept { return armors_.has_value(); }
 
     /**
      * @brief Returns whether the robot is tracked depending on whether the
@@ -85,8 +82,7 @@ class Robot {
     inline bool isTracked() const noexcept { return track_state_.has_value(); }
 
     void setDetection(const Detection& car,
-                      const std::vector<Detection>& armors,
-                      int classes) noexcept;
+                      const std::vector<Detection>& armors) noexcept;
 
     void setTrack(const Track& track) noexcept;
 
@@ -96,7 +92,7 @@ class Robot {
      * @param location The location of the robot.
      */
     inline void setLocation(const cv::Point3f& location) noexcept {
-        location_ = location;
+        location_ = location * 1e-3;  // from millimeters to meters
     }
 
     /**
@@ -105,9 +101,7 @@ class Robot {
      *
      * @return The `std::optional` value of the label.
      */
-    inline std::optional<int> label() const noexcept {
-        return isDetected() ? std::make_optional(label_) : std::nullopt;
-    }
+    inline std::optional<int> label() const noexcept { return label_; }
 
     /**
      * @brief Gets the detection bbox of the robot. If the robot has not been
@@ -115,9 +109,7 @@ class Robot {
      *
      * @return The `std::optional` value of the detection bbox.
      */
-    inline std::optional<cv::Rect> rect() const noexcept {
-        return isDetected() ? std::make_optional(rect_) : std::nullopt;
-    }
+    inline std::optional<cv::Rect> rect() const noexcept { return rect_; }
 
     /**
      * @brief Gets the detection confidence of the robot. If the robot has not
@@ -126,7 +118,7 @@ class Robot {
      * @return The `std::optional` value of the detection confidence.
      */
     inline std::optional<float> confidence() const noexcept {
-        return isDetected() ? std::make_optional(confidence_) : std::nullopt;
+        return confidence_;
     }
 
     /**
@@ -136,8 +128,7 @@ class Robot {
      * @return The `std::optional` value of the armor detections.
      */
     inline std::optional<std::vector<Detection>> armors() const noexcept {
-        return isDetected() ? std::make_optional(armors_.value())
-                            : std::nullopt;
+        return armors_;
     }
 
     /**
@@ -147,8 +138,7 @@ class Robot {
      * @return The `std::optional` value of the track state.
      */
     inline std::optional<TrackState> track_state() const noexcept {
-        return isTracked() ? std::make_optional(track_state_.value())
-                           : std::nullopt;
+        return track_state_;
     }
 
     /**
@@ -158,22 +148,21 @@ class Robot {
      * @return The `std::optional` value of the location.
      */
     inline std::optional<cv::Point3f> location() const noexcept {
-        return isLocated() ? std::make_optional(location_.value())
-                           : std::nullopt;
+        return location_;
     }
 
-    std::optional<Eigen::VectorXf> feature() const noexcept;
+    Eigen::VectorXf feature(int class_num) const noexcept;
 
     friend std::ostream& operator<<(std::ostream& os, const Robot& robot);
 
    private:
+    Robot() = delete;
     std::optional<std::vector<Detection>> armors_ = std::nullopt;
     std::optional<TrackState> track_state_ = std::nullopt;
     std::optional<cv::Point3f> location_ = std::nullopt;
-    cv::Rect2f rect_;
-    int label_;
-    float confidence_;
-    int class_num_ = -1;
+    std::optional<cv::Rect2f> rect_ = std::nullopt;
+    std::optional<int> label_ = std::nullopt;
+    std::optional<float> confidence_ = std::nullopt;
 };
 
 }  // namespace radar

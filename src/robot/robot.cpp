@@ -19,22 +19,34 @@
 namespace radar {
 
 /**
- * @brief Set the detection variables of the robot, which includes the
+ * @brief Construct the robot with the detection result, setting the detection
+ * variables of the robot, which include the vector of armor detections as well
+ * as the label, confidence and bbox of the robot.
+ *
+ * @param car The detected car information.
+ * @param armors Vector of detected armor infomation.
+ */
+Robot::Robot(const Detection& car, const std::vector<Detection>& armors) {
+    setDetection(car, armors);
+}
+
+/**
+ * @brief Set the detection variables of the robot, which include the
  * vector of armor detections as well as the label, confidence and bbox of
  * the robot.
  *
  * @param car The detected car information.
  * @param armors Vector of detected armor infomation.
- * @param classes The total number of labels.
  */
 void Robot::setDetection(const Detection& car,
-                         const std::vector<Detection>& armors,
-                         int classes) noexcept {
-    // Sets armor detections
-    armors_ = armors;
+                         const std::vector<Detection>& armors) noexcept {
+    // Sets the bbox of car
+    rect_ = cv::Rect2f(car.x, car.y, car.width, car.height);
 
-    // Sets classes
-    class_num_ = classes;
+    // If the armors are empty, sets empty label, confidence and return
+    if (armors.empty()) {
+        return;
+    }
 
     // Calculates the highest score and its label, calculating the confidence of
     // the robot
@@ -42,23 +54,22 @@ void Robot::setDetection(const Detection& car,
     for (const auto& armor : armors) {
         score_map[armor.label] += armor.confidence;
     }
-    std::tie(label_, confidence_) = *std::ranges::max_element(
+    auto [label, confidence] = *std::ranges::max_element(
         score_map, [&score_map](auto&& pair_a, auto&& pair_b) {
             return pair_a.second > pair_b.second;
         });
-    confidence_ /= std::count_if(
+    confidence /= std::count_if(
         armors.begin(), armors.end(),
-        [this](const Detection& armor) { return armor.label == label_; });
-
-    // Sets the bbox of car
-    rect_ = cv::Rect2f(car.x, car.y, car.width, car.height);
+        [&](const Detection& armor) { return armor.label == label; });
+    label_ = label;
+    confidence_ = confidence;
 
     // Sets the armor bboxes, adjusting their positions based on the position of
     // the car
     armors_ = armors;
     for (auto& armor : armors_.value()) {
-        armor.x += rect_.x;
-        armor.y += rect_.y;
+        armor.x += car.x;
+        armor.y += car.y;
     }
 }
 
@@ -77,20 +88,21 @@ void Robot::setTrack(const Track& track) noexcept {
 
 /**
  * @brief Gets the feature of the robot, which is a vector containing
- * confidence of each class. If the robot has not been detected, return
- * `std::nullopt`.
+ * confidence of each class.
  *
- * @return The `std::optional` value of the feature vector.
+ * @return The feature vector.
  */
-std::optional<Eigen::VectorXf> Robot::feature() const noexcept {
-    // Returns `std::nullopt` if it is not detected
+Eigen::VectorXf Robot::feature(int class_num) const noexcept {
+    // Returns average if it is not detected
+    Eigen::VectorXf feature(class_num);
+    feature.setZero();
     if (!isDetected()) {
-        return std::nullopt;
+        feature.setConstant(1.0f / class_num);
+        return feature;
     }
 
     // Iterates through all armors and sets the feature vector based on the
     // label and confidence of each armor
-    Eigen::VectorXf feature(class_num_);
     for (const auto& armor : armors_.value()) {
         feature(static_cast<int>(armor.label)) += armor.confidence;
     }
@@ -103,42 +115,37 @@ std::optional<Eigen::VectorXf> Robot::feature() const noexcept {
     return feature / sum;
 }
 
-/**
- * @brief Overloaded output stream operator for the Robot class, printing
- * label, rect, confidence, state and location.
- *
- * @param os The output stream.
- * @param robot The Robot object to be printed.
- *
- * @return The output stream.
- */
 std::ostream& operator<<(std::ostream& os, const Robot& robot) {
-    os << "Robot: {\n";
-    os << "    Label: "
-       << (robot.isDetected() ? std::to_string(robot.label_) : "None") << "\n";
-    os << "    Rect: "
-       << (robot.isDetected()
-               ? cv::format("[%f, %f, %f, %f]", robot.rect_.x, robot.rect_.y,
-                            robot.rect_.width, robot.rect_.height)
+    os << "Robot: { ";
+    os << "Label: "
+       << (robot.label_.has_value() ? std::to_string(robot.label_.value())
+                                    : "None")
+       << ", ";
+    os << "Rect: "
+       << (robot.rect_.has_value()
+               ? cv::format("[%f, %f, %f, %f]", robot.rect_.value().x,
+                            robot.rect_.value().y, robot.rect_.value().width,
+                            robot.rect_.value().height)
                : "None")
-       << "\n";
-    os << "    Confidence: "
-       << (robot.isDetected() ? std::to_string(robot.confidence_) : "None")
-       << "\n";
-    os << "    State: "
-       << (!robot.isTracked()                                    ? "None"
+       << ", ";
+    os << "Confidence: "
+       << (robot.confidence_.has_value()
+               ? std::to_string(robot.confidence_.value())
+               : "None")
+       << ", ";
+    os << "State: "
+       << (!robot.track_state_.has_value()                       ? "None"
            : robot.track_state_.value() == TrackState::Confirmed ? "Confirmed"
            : robot.track_state_.value() == TrackState::Tentative ? "Tentative"
                                                                  : "Deleted")
-       << "\n";
-    os << "    Location: "
-       << (robot.isLocated()
+       << ", ";
+    os << "Location: "
+       << (robot.location_.has_value()
                ? cv::format("[%f, %f, %f]", robot.location_.value().x,
                             robot.location_.value().y,
                             robot.location_.value().z)
-               : "None")
-       << "\n";
-    os << "}";
+               : "None");
+    os << " }";
     return os;
 }
 

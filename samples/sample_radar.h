@@ -200,9 +200,9 @@ void SampleRadar::visualize(const Frame& frame,
         {Label::BlueHero, "B1"},          {Label::BlueEngineer, "B2"},
         {Label::BlueInfantryThree, "B3"}, {Label::BlueInfantryFour, "B4"},
         {Label::BlueInfantryFive, "B5"},  {Label::BlueSentry, "Bs"},
-        {Label::RedHero, "B1"},           {Label::RedEngineer, "B2"},
-        {Label::RedInfantryThree, "B3"},  {Label::RedInfantryFour, "B4"},
-        {Label::RedInfantryFive, "B5"},   {Label::RedSentry, "Bs"}};
+        {Label::RedHero, "R1"},           {Label::RedEngineer, "R2"},
+        {Label::RedInfantryThree, "R3"},  {Label::RedInfantryFour, "R4"},
+        {Label::RedInfantryFive, "R5"},   {Label::RedSentry, "Rs"}};
     const auto font = cv::FONT_HERSHEY_SIMPLEX;
     constexpr int thickness = 2;
     constexpr double font_size = 1.0;

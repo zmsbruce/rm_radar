@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <future>
+#include <map>
 #include <memory>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -51,13 +52,16 @@ class SampleRadar {
      * @param world_to_camera The transform matrix(4x4) from world coordinate to
      * camera coordinate.
      * @param lidar_noise The uncertainty of points provided by the lidar(m).
+     * @param iou_thresh The Threshold IoU of decising whether the detections
+     * are the same.
      */
     SampleRadar(std::string_view car_path, std::string_view armor_path,
                 cv::Size image_size, const cv::Matx33f& intrinsic,
                 const cv::Matx44f lidar_to_camera,
                 const cv::Matx44f& world_to_camera,
-                const cv::Point3f& lidar_noise)
+                const cv::Point3f& lidar_noise, float iou_thresh = 0.75f)
         : image_size_(image_size),
+          iou_thresh_(iou_thresh),
           car_detector_(std::make_unique<Detector>(car_path, 1, 1)),
           armor_detector_(std::make_unique<Detector>(
               armor_path, kClassNum, kMaxBatchSize, kOptBatchSize)),
@@ -76,12 +80,43 @@ class SampleRadar {
    private:
     std::vector<Robot> detect(const cv::Mat& image);
     cv::Scalar cvColor(const Robot& robot);
+    float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2);
+
     SampleRadar() = delete;
-    cv::Size image_size_;
+    const cv::Size image_size_;
+    const float iou_thresh_;
     std::unique_ptr<Detector> car_detector_, armor_detector_;
     std::unique_ptr<Locator> locator_;
     std::unique_ptr<Tracker> tracker_;
 };
+
+float SampleRadar::computeIoU(const cv::Rect2f& rect1,
+                              const cv::Rect2f& rect2) {
+    float x1, y1, x2, y2;
+    cv::Rect2f intersectionRect, unionRect;
+
+    x1 = std::max(rect1.x, rect2.x);
+    y1 = std::max(rect1.y, rect2.y);
+    x2 = std::min(rect1.x + rect1.width, rect2.x + rect2.width);
+    y2 = std::min(rect1.y + rect1.height, rect2.y + rect2.height);
+    intersectionRect = x1 < x2 && y1 < y2 ? cv::Rect2f(x1, y1, x2 - x1, y2 - y1)
+                                          : cv::Rect2f(0, 0, 0, 0);
+
+    x1 = std::min(rect1.x, rect2.x);
+    y1 = std::min(rect1.y, rect2.y);
+    x2 = std::max(rect1.x + rect1.width, rect2.x + rect2.width);
+    y2 = std::max(rect1.y + rect1.height, rect2.y + rect2.height);
+    unionRect = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
+
+    float intersectionArea = intersectionRect.width * intersectionRect.height;
+    float unionArea = unionRect.width * unionRect.height;
+
+    if (unionArea > 0) {
+        return intersectionArea / unionArea;
+    } else {
+        return 0.0;
+    }
+}
 
 /**
  * @brief Detects the robots using the input image.
@@ -111,10 +146,30 @@ std::vector<Robot> SampleRadar::detect(const cv::Mat& image) {
     std::vector<Robot> robots;
     robots.reserve(car_detections.size());
 
+    std::map<int, Robot> robots_map;
     for (size_t i = 0; i < car_detections.size(); ++i) {
-        robots.emplace_back(car_detections[i], armor_detections_batch[i]);
+        Robot robot(car_detections[i], armor_detections_batch[i]);
+        if (!robot.isDetected()) {
+            robots.emplace_back(robot);
+            continue;
+        }
+        int label = robot.label().value();
+        if (!robots_map.contains(label)) {
+            robots_map.emplace(label, robot);
+        } else {
+            auto& existed_robot = robots_map.at(label);
+            if (computeIoU(existed_robot.rect().value(), robot.rect().value()) >
+                iou_thresh_) {
+                continue;
+            } else if (existed_robot.confidence().value() <
+                       robot.confidence().value()) {
+                std::swap(existed_robot, robot);
+            }
+        }
     }
 
+    std::for_each(robots_map.begin(), robots_map.end(),
+                  [&](const auto& pair) { robots.emplace_back(pair.second); });
     return robots;
 }
 
@@ -282,7 +337,7 @@ void SampleRadar::visualize(const Frame& frame,
     }
 
     cv::namedWindow("image", cv::WINDOW_NORMAL);
-    cv::resizeWindow("image", 1200, 800);
+    cv::resizeWindow("image", 1920, 1080);
     cv::imshow("image", image);
     cv::waitKey(0);
 }

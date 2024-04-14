@@ -144,7 +144,7 @@ void Tracker::update(
             }
         } else {
             auto& robot = robots[robot_id];
-            if (robot.isLocated()) {
+            if (robot.isDetected() && robot.isLocated()) {
                 // Updates track
                 track.update(robot.location().value(),
                              robot.feature(class_num_));

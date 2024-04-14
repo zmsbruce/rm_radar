@@ -173,6 +173,17 @@ class Track {
         return cv::Point3f(state(0), state(3), state(6));
     }
 
+    friend std::ostream& operator<<(std::ostream& os, const Track& track) {
+        std::cout << "Track: { ";
+        std::cout << "id: " << track.track_id_ << ", ";
+        std::cout << "label: " << track.label() << ", ";
+        std::cout << "state: " << (track.state_ == TrackState::Confirmed ? "confirmed" : track.state_ == TrackState::Tentative ? "tentative" : "deleted") << ", ";
+        std::cout << "init count: " << track.init_count_ << ", ";
+        std::cout << "miss count: " << track.miss_count_;
+        std::cout << " }";
+        return os;
+    }
+
    private:
     Track() = delete;
 

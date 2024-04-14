@@ -58,10 +58,9 @@ class Locator {
     Locator(int image_width, int image_height, const cv::Matx33f& intrinsic,
             const cv::Matx44f& lidar_to_camera,
             const cv::Matx44f& world_to_camera, float zoom_factor = 0.5f,
-            float scale_factor = 1.5, size_t queue_size = 3,
-            float min_depth_diff = 500, float max_depth_diff = 4000,
-            float cluster_epsilon = 15, size_t min_cluster_point_num = 10,
-            float max_distance = 29300);
+            size_t queue_size = 3, float min_depth_diff = 500,
+            float max_depth_diff = 4000, float cluster_epsilon = 15,
+            size_t min_cluster_point_num = 10, float max_distance = 29300);
 
     void update(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept;
 
@@ -74,9 +73,9 @@ class Locator {
     cv::Point3f lidarToWorld(const cv::Point3f& point) const noexcept;
     cv::Point3f lidarToCamera(const cv::Point3f& point) const noexcept;
     void search(Robot& robot) const noexcept;
-    cv::Rect zoomAndScale(const cv::Rect& rect) const noexcept;
+    cv::Rect zoom(const cv::Rect& rect) const noexcept;
     int image_width_, image_height_;
-    float zoom_factor_, scale_factor_;
+    float zoom_factor_;
     int image_width_zoomed_, image_height_zoomed_;
     size_t queue_size_;
     cv::Matx33f intrinsic_, intrinsic_inv_;

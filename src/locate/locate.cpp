@@ -98,8 +98,6 @@ cv::Point3f Locator::lidarToCamera(const cv::Point3f& point) const noexcept {
  * coordinates.
  * @param zoom_factor The zoom factor to apply to the image, which is used to
  * shrink the size of depth image in order to accelerate speed of processing.
- * @param scale_factor The scale factor to apply to the image, which is used to
- * enlarge roi to capture more possible points.
  * @param queue_size The size of the queue of depth images.
  * @param min_depth_diff The minimum depth difference for point cloud
  * differencing.
@@ -115,13 +113,12 @@ Locator::Locator(int image_width, int image_height,
                  const cv::Matx33f& intrinsic,
                  const cv::Matx44f& lidar_to_camera,
                  const cv::Matx44f& world_to_camera, float zoom_factor,
-                 float scale_factor, size_t queue_size, float min_depth_diff,
-                 float max_depth_diff, float cluster_epsilon,
-                 size_t min_cluster_point_num, float max_distance)
+                 size_t queue_size, float min_depth_diff, float max_depth_diff,
+                 float cluster_epsilon, size_t min_cluster_point_num,
+                 float max_distance)
     : image_width_{image_width},
       image_height_{image_height},
       zoom_factor_{zoom_factor},
-      scale_factor_{scale_factor},
       image_width_zoomed_{static_cast<int>(image_width * zoom_factor)},
       image_height_zoomed_{static_cast<int>(image_height * zoom_factor)},
       queue_size_{queue_size},
@@ -270,7 +267,7 @@ void Locator::search(Robot& robot) const noexcept {
 
     std::map<int, std::vector<cv::Point3f>> candidates;
 
-    auto rect{zoomAndScale(robot.rect().value())};
+    auto rect{zoom(robot.rect().value())};
     for (int v = rect.y; v < rect.y + rect.height; ++v) {
         const float* image_row = diff_depth_image_.ptr<float>(v);
         for (int u = rect.x; u < rect.x + rect.width; ++u) {
@@ -313,28 +310,21 @@ void Locator::search(std::vector<Robot>& robots) const noexcept {
 }
 
 /**
- * @brief Applies zoom and scale transformations to the input rectangle.
- *
- * This method applies zoom and scale transformations to the input rectangle. It
- * calculates the zoomed and scaled dimensions and position of the rectangle
- * based on the zoom factor and scale factor specified during Locator
- * initialization. The resulting rectangle is clipped to fit within the zoomed
- * image dimensions.
+ * @brief Applies zoom transformations to the input rectangle.
  *
  * @param rect The input rectangle to be transformed.
- * @return The transformed rectangle after applying zoom and scale.
+ * @return The transformed rectangle after applying zoom transform.
  *
  * @note The `zoom` factor is used to shrink the size of depth image in order to
- * accelerate speed of processing, And the `scale` factor is used to enlarge roi
- * to capture more possible points.
+ * accelerate speed of processing.
  */
-cv::Rect Locator::zoomAndScale(const cv::Rect& rect) const noexcept {
+cv::Rect Locator::zoom(const cv::Rect& rect) const noexcept {
     const cv::Rect image_rect(0, 0, image_width_zoomed_, image_height_zoomed_);
     auto center_x = rect.x * zoom_factor_ + rect.width * zoom_factor_ * 0.5f;
     auto center_y = rect.y * zoom_factor_ + rect.height * zoom_factor_ * 0.5f;
 
-    int ret_width = rect.width * zoom_factor_ * scale_factor_;
-    int ret_height = rect.height * zoom_factor_ * scale_factor_;
+    int ret_width = rect.width * zoom_factor_;
+    int ret_height = rect.height * zoom_factor_;
     int ret_x = center_x - ret_width * 0.5f;
     int ret_y = center_y - ret_height * 0.5f;
 

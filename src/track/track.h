@@ -15,7 +15,6 @@
 #include <chrono>
 #include <memory>
 #include <opencv2/opencv.hpp>
-#include <stdexcept>
 
 #include "features.h"
 #include "singer.h"
@@ -67,13 +66,10 @@ class Track {
                                  0.1f;
         Eigen::Matrix<float, track::kMeasurementSize, track::kMeasurementSize>
             observe_noise_mat;
-        // clang-format off
-        observe_noise_mat << observe_noise.x, 0, 0, 
-                             0, observe_noise.y, 0, 
-                             0, 0, observe_noise.z;
-        // clang-format on 
-        filter_ = std::make_unique<track::SingerEKF>(initial_state, initial_covariance,
-                                              max_acc, tau, observe_noise_mat);
+        observe_noise_mat << observe_noise.x, 0, 0, 0, observe_noise.y, 0, 0, 0,
+            observe_noise.z;
+        filter_ = std::make_unique<track::SingerEKF>(
+            initial_state, initial_covariance, max_acc, tau, observe_noise_mat);
     }
 
     /**
@@ -177,7 +173,11 @@ class Track {
         std::cout << "Track: { ";
         std::cout << "id: " << track.track_id_ << ", ";
         std::cout << "label: " << track.label() << ", ";
-        std::cout << "state: " << (track.state_ == TrackState::Confirmed ? "confirmed" : track.state_ == TrackState::Tentative ? "tentative" : "deleted") << ", ";
+        std::cout << "state: "
+                  << (track.state_ == TrackState::Confirmed   ? "confirmed"
+                      : track.state_ == TrackState::Tentative ? "tentative"
+                                                              : "deleted")
+                  << ", ";
         std::cout << "init count: " << track.init_count_ << ", ";
         std::cout << "miss count: " << track.miss_count_;
         std::cout << " }";

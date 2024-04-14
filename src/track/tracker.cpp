@@ -41,11 +41,12 @@ using namespace track;
  * @param feature_weight The weight of feature which is needed in min-cost
  * matching.
  * @param max_iter The maximum iteration time of the auction algorithm.
+ * @param distance_thresh The distance threshold(m) for scoring.
  */
 Tracker::Tracker(const cv::Point3f& observation_noise, int class_num,
                  int init_thresh, int miss_thresh, float max_acceleration,
                  float acceleration_correlation_time, float distance_weight,
-                 float feature_weight, int max_iter)
+                 float feature_weight, int max_iter, float distance_thresh)
     : class_num_{class_num},
       init_thresh_{init_thresh},
       miss_thresh_{miss_thresh},
@@ -54,10 +55,12 @@ Tracker::Tracker(const cv::Point3f& observation_noise, int class_num,
       distance_weight_{distance_weight},
       feature_weight_{feature_weight},
       measurement_noise_{observation_noise},
-      max_iter_{max_iter} {}
+      max_iter_{max_iter},
+      distance_thresh_{distance_thresh} {}
 
 /**
- * @brief Calculate the Euclidean distance between two points in 3D space.
+ * @brief Calculate the weighted Euclidean distance between two points in 3D
+ * space.
  *
  * @param p1 The first point.
  * @param p2 The second point.
@@ -79,18 +82,23 @@ float Tracker::calculateDistance(const cv::Point3f& p1, const cv::Point3f& p2) {
  * @return The calculated cost.
  */
 float Tracker::calculateCost(const Track& track, const Robot& robot) {
-    if (!robot.isLocated()) {
+    if (!robot.isLocated() && !robot.isDetected()) {
         return 0.0f;
     }
 
     // calculate distance score
-    constexpr float acc_dis_thresh = 0.8f;
-    float distance =
-        calculateDistance(robot.location().value(), track.location());
-    float distance_score = distance < acc_dis_thresh ? 1.0f
-                           : distance < 2 * acc_dis_thresh
-                               ? -1.25f * distance + 2.0f
-                               : 0.0f;
+    float distance_score;
+    if (!robot.isLocated()) {
+        distance_score = 0.0f;
+    } else {
+        float distance =
+            calculateDistance(robot.location().value(), track.location());
+        distance_score =
+            distance < distance_thresh_ ? 1.0f
+            : distance < 2 * distance_thresh_
+                ? -1 / (2 * distance_thresh_) * distance + 1.5f
+                : 0.5f * std::exp(2.0f - distance / distance_thresh_);
+    }
 
     // calculate feature score
     auto feature_robot = robot.feature(class_num_);
@@ -144,7 +152,7 @@ void Tracker::update(
             }
         } else {
             auto& robot = robots[robot_id];
-            if (robot.isDetected() && robot.isLocated()) {
+            if (robot.isLocated()) {
                 // Updates track
                 track.update(robot.location().value(),
                              robot.feature(class_num_));
@@ -155,9 +163,9 @@ void Tracker::update(
                     }
                     track.miss_count_ = 0;
                 }
-                // Updates robot
-                robot.setTrack(track);
             }
+            // Updates robot
+            robot.setTrack(track);
             // Appends to matched robot indices vector
             matched_robot_indices.push_back(robot_id);
         }
@@ -180,10 +188,10 @@ void Tracker::update(
             Track track(robot.location().value(), robot.feature(class_num_),
                         timestamp, latest_id_++, max_acc_, tau_,
                         measurement_noise_);
-            // Emplaces new track
-            tracks_.emplace_back(std::move(track));
             // Updates robot
             robot.setTrack(track);
+            // Emplaces new track
+            tracks_.emplace_back(std::move(track));
         }
     }
 

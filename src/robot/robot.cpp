@@ -56,7 +56,7 @@ void Robot::setDetection(const Detection& car,
     }
     auto [label, confidence] = *std::ranges::max_element(
         score_map, [&score_map](auto&& pair_a, auto&& pair_b) {
-            return pair_a.second > pair_b.second;
+            return pair_a.second < pair_b.second;
         });
     confidence /= std::count_if(
         armors.begin(), armors.end(),
@@ -83,6 +83,13 @@ void Robot::setTrack(const Track& track) noexcept {
     if (track.isConfirmed()) {
         label_ = track.label();
         location_ = track.location();
+    } else {  // track is tentative
+        if (!label_.has_value()) {
+            label_ = track.label();
+        }
+        if (!location_.has_value()) {
+            location_ = track.location();
+        }
     }
 }
 

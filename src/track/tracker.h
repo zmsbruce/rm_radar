@@ -27,7 +27,7 @@ class Tracker {
             float max_acceleration = 2.0f,
             float acceleration_correlation_time = 1.0f,
             float distance_weight = 0.40f, float feature_weight = 0.60f,
-            int max_iter = 100);
+            int max_iter = 100, float distance_thresh = 0.8f);
 
     void update(
         std::vector<Robot>& robots,
@@ -49,6 +49,7 @@ class Tracker {
     const cv::Point3f measurement_noise_;
     std::vector<Track> tracks_;
     const int max_iter_;
+    const float distance_thresh_;
     int latest_id_ = 0;
 };
 

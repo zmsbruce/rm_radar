@@ -96,7 +96,7 @@ float Tracker::calculateCost(const Track& track, const Robot& robot) {
             calculateDistance(robot.location().value(), track.location());
         distance_score = distance < distance_thresh_ ? 1.0f
                          : distance < 2 * distance_thresh_
-                             ? -1 / (2 * distance_thresh_) * distance + 1.5f
+                             ? -distance / distance_thresh_ + 2.0f
                              : 0.0f;
     }
 

@@ -19,12 +19,9 @@
 #include <vector>
 
 #include "detect/detection.h"
+#include "track/track.h"
 
 namespace radar {
-
-class Track;
-
-enum class TrackState;
 
 /**
  * @brief Enumeration representing the labels for robot types.

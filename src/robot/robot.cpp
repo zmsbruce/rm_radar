@@ -104,7 +104,6 @@ Eigen::VectorXf Robot::feature(int class_num) const noexcept {
     Eigen::VectorXf feature(class_num);
     feature.setZero();
     if (!isDetected()) {
-        feature.setConstant(1.0f / class_num);
         return feature;
     }
 

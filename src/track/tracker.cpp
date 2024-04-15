@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <numeric>
+#include <ranges>
 
 #include "auction.h"
 
@@ -93,11 +94,10 @@ float Tracker::calculateCost(const Track& track, const Robot& robot) {
     } else {
         float distance =
             calculateDistance(robot.location().value(), track.location());
-        distance_score =
-            distance < distance_thresh_ ? 1.0f
-            : distance < 2 * distance_thresh_
-                ? -1 / (2 * distance_thresh_) * distance + 1.5f
-                : 0.5f * std::exp(2.0f - distance / distance_thresh_);
+        distance_score = distance < distance_thresh_ ? 1.0f
+                         : distance < 2 * distance_thresh_
+                             ? -1 / (2 * distance_thresh_) * distance + 1.5f
+                             : 0.0f;
     }
 
     // calculate feature score
@@ -105,9 +105,14 @@ float Tracker::calculateCost(const Track& track, const Robot& robot) {
     auto feature_track = track.feature();
     assert(feature_robot.size() == feature_track.size());
 
-    float feature_score = feature_robot.dot(feature_track) /
-                          (feature_robot.norm() * feature_track.norm());
-    feature_score = (feature_score + 1.0f) / 2.0f;
+    float feature_score;
+    float denom = feature_robot.norm() * feature_track.norm();
+    if (iszero(denom)) {
+        feature_score = 0.0f;
+    } else {
+        feature_score = feature_robot.dot(feature_track) / denom;
+        feature_score = (feature_score + 1.0f) / 2.0f;
+    }
 
     return distance_score * distance_weight_ + feature_score * feature_weight_;
 }
@@ -126,22 +131,64 @@ void Tracker::update(
                   [&](Track& track) { track.predict(timestamp); });
 
     // Sets the cost matrix and calculates min-cost matching
-    Eigen::MatrixXf cost_matrix(tracks_.size(), robots.size());
-    for (size_t track_id = 0; track_id < tracks_.size(); ++track_id) {
-        for (size_t robot_id = 0; robot_id < robots.size(); ++robot_id) {
-            cost_matrix(track_id, robot_id) =
+    Eigen::MatrixXf cost_matrix(robots.size(), tracks_.size());
+    for (size_t robot_id = 0; robot_id < robots.size(); ++robot_id) {
+        for (size_t track_id = 0; track_id < tracks_.size(); ++track_id) {
+            cost_matrix(robot_id, track_id) =
                 calculateCost(tracks_[track_id], robots[robot_id]);
         }
     }
+
+    std::vector<int> unmatched_robot_indices;
+    std::vector<int> matched_track_indices;
     auto match_result = auction(cost_matrix, max_iter_);
+    for (size_t robot_id = 0; robot_id < match_result.size(); ++robot_id) {
+        auto& robot = robots[robot_id];
+        if (robot.isLocated()) {
+            unmatched_robot_indices.emplace_back(robot_id);
+            continue;
+        }
 
-    // Sets the tracks based on the match result
-    std::vector<int> matched_robot_indices;
-    for (size_t track_id = 0; track_id < match_result.size(); ++track_id) {
+        int track_id = match_result[robot_id];
+        if (track_id == kNotMatched) {
+            // Updates unmatched robot indices
+            unmatched_robot_indices.emplace_back(robot_id);
+            continue;
+        }
+
         auto& track = tracks_[track_id];
+        //! The auction algorithm operates by ensuring that each agent is
+        //! assigned a task, even if it means choosing tasks of very low
+        //! value. So it is necessary to confirm whether the agent and task
+        //! are appropriate to be assigned, otherwise the agent and task
+        //! should be seen unassociated.
+        if (calculateDistance(robot.location().value(), track.location()) >
+                2 * distance_thresh_ &&
+            robot.label().value_or(-1) != track.label()) {
+            unmatched_robot_indices.emplace_back(robot_id);
+            continue;
+        }
 
-        int robot_id = match_result[track_id];
-        if (robot_id == kNotMatched) {
+        // Updates track
+        track.update(robot.location().value(), robot.feature(class_num_));
+        if (track.isTentative()) {
+            track.init_count_ += 1;
+            if (track.init_count_ >= init_thresh_) {
+                track.setState(TrackState::Confirmed);
+            }
+            track.miss_count_ = 0;
+        }
+        // Updates robot
+        robot.setTrack(track);
+        // Marks the index of matched tracks
+        matched_track_indices.emplace_back(track_id);
+    }
+
+    // Marks missed of unmatched tracks
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+        if (std::ranges::find(matched_track_indices, i) ==
+            matched_track_indices.end()) {
+            auto& track = tracks_[i];
             if (track.isTentative()) {
                 track.setState(TrackState::Deleted);
             } else if (track.isConfirmed()) {
@@ -150,56 +197,26 @@ void Tracker::update(
                     track.setState(TrackState::Deleted);
                 }
             }
-        } else {
-            auto& robot = robots[robot_id];
-            if (robot.isLocated()) {
-                // Updates track
-                track.update(robot.location().value(),
-                             robot.feature(class_num_));
-                if (track.isTentative()) {
-                    track.init_count_ += 1;
-                    if (track.init_count_ >= init_thresh_) {
-                        track.setState(TrackState::Confirmed);
-                    }
-                    track.miss_count_ = 0;
-                }
-            }
-            // Updates robot
-            robot.setTrack(track);
-            // Appends to matched robot indices vector
-            matched_robot_indices.push_back(robot_id);
         }
     }
 
-    // Calculates unmatched robot indices
-    std::vector<int> unmatched_robot_indices(robots.size());
-    std::iota(unmatched_robot_indices.begin(), unmatched_robot_indices.end(),
-              0);
-    std::sort(matched_robot_indices.rbegin(), matched_robot_indices.rend());
-    for (int index : matched_robot_indices) {
-        unmatched_robot_indices.erase(unmatched_robot_indices.begin() + index);
-    }
-
-    // Initializes tracks from unmatched robots
-    for (const auto& index : unmatched_robot_indices) {
-        auto& robot = robots[index];
-        // Ignore robots that are not detected or located
-        if (robot.isDetected() && robot.isLocated()) {
-            Track track(robot.location().value(), robot.feature(class_num_),
-                        timestamp, latest_id_++, max_acc_, tau_,
-                        measurement_noise_);
-            // Updates robot
-            robot.setTrack(track);
-            // Emplaces new track
-            tracks_.emplace_back(std::move(track));
-        }
-    }
-
-    // Removes deleted tracks
+    // Erases deleted tracks
     tracks_.erase(
         std::remove_if(tracks_.begin(), tracks_.end(),
                        [](const Track& track) { return track.isDeleted(); }),
         tracks_.end());
+
+    // Appends new tracks
+    std::ranges::for_each(unmatched_robot_indices, [&](int index) {
+        auto& robot = robots[index];
+        if (robot.isDetected() && robot.isLocated()) {
+            Track track(robot.location().value(), robot.feature(class_num_),
+                        timestamp, latest_id_++, max_acc_, tau_,
+                        measurement_noise_);
+            robot.setTrack(track);
+            tracks_.emplace_back(std::move(track));
+        }
+    });
 }
 
 }  // namespace radar

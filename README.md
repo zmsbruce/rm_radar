@@ -44,7 +44,7 @@ _<div align="right">by zmsbruce</div>_
 - 建议在 Ubuntu 20.04 或 22.04 下编译和安装本项目；
 - 代码基于 C++20 ，需要使用 GCC 11 或更高版本，或者 Clang 11 或更高版本；
 - 需要 CMake 版本不低于 3.19，以完整支持 CUDA Toolkit 包的获取与配置；
-- 需要 CUDA 版本不低于 12.0，TensorRT 版本不低于 8.5；
+- 需要 CUDA 版本不低于 12.2，TensorRT 版本不低于 8.5；
 - 需要 OpenCV, PCL, Eigen 库以支持图像、点云处理和目标跟踪；
 - 为了确保顺利编译，建议安装 TBB, VTK 库；
 

@@ -136,7 +136,7 @@ class KalmanFilter final : public Kalman<StateSize, MeasurementSize> {
         // the inverse
         const Eigen::Matrix<float, StateSize, MeasurementSize> kalman_gain =
             this->covariance_ * observation_matrix_.transpose() *
-            innovation_covariance.ldlt().solve(
+            innovation_covariance.llt().solve(
                 Eigen::Matrix<float, MeasurementSize,
                               MeasurementSize>::Identity());
 
@@ -287,7 +287,7 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
         // the inverse
         const Eigen::Matrix<float, StateSize, MeasurementSize> kalman_gain =
             this->covariance_ * observation_matrix_.transpose() *
-            innovation_covariance.ldlt().solve(
+            innovation_covariance.llt().solve(
                 Eigen::Matrix<float, MeasurementSize,
                               MeasurementSize>::Identity());
 

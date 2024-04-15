@@ -78,100 +78,15 @@ class SampleRadar {
         const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
 
    private:
-    std::vector<Robot> detect(const cv::Mat& image);
-    cv::Scalar cvColor(const Robot& robot);
-    float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2);
-
     SampleRadar() = delete;
+    cv::Scalar cvColor(const Robot& robot);
+
     const cv::Size image_size_;
     const float iou_thresh_;
     std::unique_ptr<Detector> car_detector_, armor_detector_;
     std::unique_ptr<Locator> locator_;
     std::unique_ptr<Tracker> tracker_;
 };
-
-float SampleRadar::computeIoU(const cv::Rect2f& rect1,
-                              const cv::Rect2f& rect2) {
-    float x1, y1, x2, y2;
-    cv::Rect2f intersectionRect, unionRect;
-
-    x1 = std::max(rect1.x, rect2.x);
-    y1 = std::max(rect1.y, rect2.y);
-    x2 = std::min(rect1.x + rect1.width, rect2.x + rect2.width);
-    y2 = std::min(rect1.y + rect1.height, rect2.y + rect2.height);
-    intersectionRect = x1 < x2 && y1 < y2 ? cv::Rect2f(x1, y1, x2 - x1, y2 - y1)
-                                          : cv::Rect2f(0, 0, 0, 0);
-
-    x1 = std::min(rect1.x, rect2.x);
-    y1 = std::min(rect1.y, rect2.y);
-    x2 = std::max(rect1.x + rect1.width, rect2.x + rect2.width);
-    y2 = std::max(rect1.y + rect1.height, rect2.y + rect2.height);
-    unionRect = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
-
-    float intersectionArea = intersectionRect.width * intersectionRect.height;
-    float unionArea = unionRect.width * unionRect.height;
-
-    if (unionArea > 0) {
-        return intersectionArea / unionArea;
-    } else {
-        return 0.0;
-    }
-}
-
-/**
- * @brief Detects the robots using the input image.
- *
- * @param image The input image.
- * @return
- */
-std::vector<Robot> SampleRadar::detect(const cv::Mat& image) {
-    if (image.size() != image_size_) {
-        std::cerr << "image size does not match." << std::endl;
-        return {};
-    }
-
-    std::vector<cv::Mat> car_images;
-    auto car_detections = car_detector_->detect(image);
-    car_images.reserve(car_detections.size());
-    std::for_each(car_detections.begin(), car_detections.end(),
-                  [&](const Detection& detection) {
-                      cv::Mat car_image =
-                          image(cv::Rect(detection.x, detection.y,
-                                         detection.width, detection.height))
-                              .clone();
-                      car_images.emplace_back(car_image);
-                  });
-    auto armor_detections_batch = armor_detector_->detect(car_images);
-
-    std::vector<Robot> robots;
-    robots.reserve(car_detections.size());
-
-    std::map<int, Robot> robots_map;
-    for (size_t i = 0; i < car_detections.size(); ++i) {
-        Robot robot(car_detections[i], armor_detections_batch[i]);
-        if (!robot.isDetected()) {
-            robots.emplace_back(robot);
-            continue;
-        }
-        int label = robot.label().value();
-        if (!robots_map.contains(label)) {
-            robots_map.emplace(label, robot);
-        } else {
-            auto& existed_robot = robots_map.at(label);
-            if (computeIoU(existed_robot.rect().value(), robot.rect().value()) >
-                iou_thresh_) {
-                continue;
-            } else if (existed_robot.confidence().value() <
-                       robot.confidence().value()) {
-                std::swap(existed_robot, robot);
-            }
-        }
-    }
-
-    std::for_each(robots_map.begin(), robots_map.end(),
-                  [&](const auto& pair) { robots.emplace_back(pair.second); });
-    return robots;
-}
 
 /**
  * @brief Updates the background depth map using the input cloud.
@@ -201,7 +116,8 @@ std::vector<Robot> SampleRadar::runOnce(const Frame& frame) {
     });
 
     auto future_detect = std::async(std::launch::async, [&] {
-        return detect(frame.image().value_or(cv::Mat()));
+        return detectOnce(frame.image().value_or(cv::Mat()), *car_detector_,
+                          *armor_detector_, iou_thresh_);
     });
 
     future_locate.get();

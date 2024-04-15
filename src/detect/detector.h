@@ -27,6 +27,7 @@
 #include "detection.h"
 #include "logger.h"
 #include "preparam.h"
+#include "robot/robot.h"
 #include "tensor.h"
 
 namespace radar {
@@ -167,5 +168,8 @@ class Detector {
     int output_anchors_{0};
     int batch_size_{0};
 };
+
+std::vector<Robot> detectOnce(const cv::Mat& image, Detector& car_detector,
+                              Detector& armor_detector, float iou_thresh);
 
 }  // namespace radar

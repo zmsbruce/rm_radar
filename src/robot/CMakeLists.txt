@@ -1,5 +1,5 @@
 find_package(OpenCV REQUIRED)
-find_package(Eigen3 REQUIRED)
+find_package(Eigen3 3.4 REQUIRED)
 
 add_library(robot SHARED
     robot.cpp

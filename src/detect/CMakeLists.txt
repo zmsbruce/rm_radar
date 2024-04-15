@@ -24,4 +24,5 @@ target_link_libraries(detector PUBLIC
     CUDA::cudart
     ${TensorRT_LIBRARIES}
     TBB::tbb
+    robot
 )

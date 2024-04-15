@@ -46,82 +46,60 @@ constexpr int kNotMatched = -1;
  * for the assignment problem[J]. Annals of Operations Research, 1988,
  * 14(1):105-123.
  */
-std::vector<int> auction(Eigen::MatrixXf value_matrix, int max_iter) {
+std::vector<int> auction(const Eigen::MatrixXf& value_matrix, int max_iter) {
     int num_agents = value_matrix.rows();
     int num_tasks = value_matrix.cols();
-    int num_tasks_real = num_tasks;
 
-    // If there are more agents than tasks, add virtual tasks with 0 value
+    // Ensure we have a square matrix by adding virtual tasks if necessary
+    Eigen::MatrixXf adjusted_value_matrix =
+        (num_agents > num_tasks) ? Eigen::MatrixXf::Zero(num_agents, num_agents)
+                                 : value_matrix;
+
     if (num_agents > num_tasks) {
-        Eigen::MatrixXf extended_value_matrix =
-            Eigen::MatrixXf::Zero(num_agents, num_agents);
-        extended_value_matrix.block(0, 0, num_agents, num_tasks) = value_matrix;
-        value_matrix = std::move(extended_value_matrix);
-        num_tasks = num_agents;  // Now we have a square matrix
+        adjusted_value_matrix.block(0, 0, num_agents, num_tasks) = value_matrix;
     }
 
-    Eigen::VectorXf prices = Eigen::VectorXf::Zero(num_tasks);
+    int num_tasks_adjusted = adjusted_value_matrix.cols();
+
+    Eigen::VectorXf prices = Eigen::VectorXf::Zero(num_tasks_adjusted);
     std::vector<int> assignment(num_agents, kNotMatched);
-    std::vector<bool> assigned_tasks(num_tasks, false);
+    std::vector<bool> assigned_tasks(num_tasks_adjusted, false);
 
-    int iterations = 0;
-
-    while (iterations < max_iter) {
-        if (std::count_if(assignment.begin(), assignment.end(), [&](int val) {
-                return val >= 0 && val <= num_tasks_real;
-            }) >= num_agents) {
-            break;
-        }
-
+    for (int iteration = 0; iteration < max_iter; ++iteration) {
         bool any_assignment_changed = false;
 
         for (int agent = 0; agent < num_agents; ++agent) {
-            if (assignment[agent] != kNotMatched) {
-                continue;
-            }
+            if (assignment[agent] != kNotMatched) continue;
 
             int best_task = kNotMatched;
             float best_value = -std::numeric_limits<float>::infinity();
-            for (int task = 0; task < num_tasks; ++task) {
-                float value = value_matrix(agent, task) - prices(task);
+
+            for (int task = 0; task < num_tasks_adjusted; ++task) {
+                float value = adjusted_value_matrix(agent, task) - prices(task);
                 if (value > best_value) {
                     best_value = value;
                     best_task = task;
                 }
             }
 
-            if (best_task != kNotMatched) {
-                // Increase the price for the best task
+            if (best_task != kNotMatched && !assigned_tasks[best_task]) {
                 prices(best_task) += best_value;
-
-                // Reassign any agent currently assigned to best_task
-                for (int other_agent = 0; other_agent < num_agents;
-                     ++other_agent) {
-                    if (assignment[other_agent] == best_task) {
-                        assignment[other_agent] = kNotMatched;
-                        break;
-                    }
-                }
-
-                // Assign the best task to the current agent
                 assignment[agent] = best_task;
                 assigned_tasks[best_task] = true;
                 any_assignment_changed = true;
             }
         }
 
-        if (!any_assignment_changed) {  // If no assignment changed, the
-                                        // algorithm is stuck
-            break;
-        }
-
-        iterations++;
+        if (!any_assignment_changed)
+            break;  // No change in assignments, exit loop
     }
 
-    // Set virtual task index to -1
-    std::for_each(assignment.begin(), assignment.end(), [&](int& val) {
-        val = val >= num_tasks_real ? kNotMatched : val;
-    });
+    // Remove assignments to virtual tasks
+    for (int agent = 0; agent < num_agents; ++agent) {
+        if (assignment[agent] >= num_tasks) {
+            assignment[agent] = kNotMatched;
+        }
+    }
 
     return assignment;
 }

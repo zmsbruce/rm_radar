@@ -265,6 +265,17 @@ void Detector::restoreDetection(Detection& detection,
                                   pparam.height - detection.height);
 }
 
+/**
+ * @brief Writes data to a file at the specified path.
+ *
+ * This function takes a span of characters as input and writes them to
+ * a file specified by the path. It opens the file in binary mode and throws
+ * exceptions on failure.
+ *
+ * @param data A std::span<const char> representing the data to be written.
+ * @param path A std::string_view representing the file path where data is to be
+ * written.
+ */
 void Detector::writeToFile(std::span<const char> data, std::string_view path) {
     std::ofstream ofs(path.data(), std::ios::out | std::ios::binary);
     ofs.exceptions(ofs.failbit | ofs.badbit);
@@ -272,6 +283,18 @@ void Detector::writeToFile(std::span<const char> data, std::string_view path) {
     ofs.close();
 }
 
+/**
+ * @brief Loads data from a file into memory.
+ *
+ * Opens a file in binary mode specified by the path. It reads the entire
+ * content into a dynamically allocated buffer and returns it along with its
+ * size.
+ *
+ * @param path A std::string_view representing the path of the file to read
+ * from.
+ * @return A pair consisting of a shared pointer to the loaded data and the size
+ * of the data.
+ */
 auto Detector::loadFromFile(std::string_view path)
     -> std::pair<std::shared_ptr<char[]>, size_t> {
     std::ifstream ifs{path.data(), std::ios::binary};
@@ -285,6 +308,17 @@ auto Detector::loadFromFile(std::string_view path)
     return std::make_pair(buffer, size);
 }
 
+/**
+ * @brief Computes the Intersection over Union (IoU) of two rectangles.
+ *
+ * The IoU is a measure used in object detection to quantify the accuracy of
+ * an object detector on a particular dataset. It calculates the ratio of
+ * intersection area to the union area of two rectangles.
+ *
+ * @param rect1 The first rectangle as a cv::Rect2f.
+ * @param rect2 The second rectangle as a cv::Rect2f.
+ * @return The IoU ratio as a float. Returns 0.0 if the union area is zero.
+ */
 static float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2) {
     float x1, y1, x2, y2;
     cv::Rect2f intersectionRect, unionRect;
@@ -312,8 +346,31 @@ static float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2) {
     }
 }
 
-std::vector<Robot> detectOnce(const cv::Mat& image, Detector& car_detector,
-                              Detector& armor_detector, float iou_thresh) {
+/**
+ * @brief Detects robots within an image using separate detectors for cars and
+ * armor.
+ *
+ * This function first uses a car detector to identify potential car locations
+ * in an image. For each detected car, a sub-image is extracted and these images
+ * are then passed to an armor detector. It constructs a collection of Robot
+ * objects based on the detections from both detectors. It also handles
+ * overlapping detections by using an IoU threshold to determine whether two
+ * detections are referring to the same object.
+ *
+ * @param image The input image in which to detect robots.
+ * @param car_detector The Detector object used to detect cars in the image.
+ * @param armor_detector The Detector object used to detect armor in the car
+ * sub-images.
+ * @param iou_thresh The IoU (Intersection over Union) threshold used to resolve
+ * overlaps in detections. If the IoU of two detections exceeds this threshold,
+ * only the detection with the higher confidence score is retained.
+ *
+ * @return A `std::vector<Robot>` containing all detected robots. Each robot is
+ * represented by a Robot object, which includes information about the car and
+ * armor detections.
+ */
+std::vector<Robot> detectRobots(const cv::Mat& image, Detector& car_detector,
+                                Detector& armor_detector, float iou_thresh) {
     std::vector<cv::Mat> car_images;
     auto car_detections = car_detector.detect(image);
     car_images.reserve(car_detections.size());
@@ -341,13 +398,13 @@ std::vector<Robot> detectOnce(const cv::Mat& image, Detector& car_detector,
         if (!robots_map.contains(label)) {
             robots_map.emplace(label, robot);
         } else {
-            auto& existed_robot = robots_map.at(label);
-            if (computeIoU(existed_robot.rect().value(), robot.rect().value()) >
+            auto& exist_robot = robots_map.at(label);
+            if (computeIoU(exist_robot.rect().value(), robot.rect().value()) >
                 iou_thresh) {
                 continue;
-            } else if (existed_robot.confidence().value() <
+            } else if (exist_robot.confidence().value() <
                        robot.confidence().value()) {
-                std::swap(existed_robot, robot);
+                std::swap(exist_robot, robot);
             }
         }
     }

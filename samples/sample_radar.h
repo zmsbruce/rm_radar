@@ -116,8 +116,8 @@ std::vector<Robot> SampleRadar::runOnce(const Frame& frame) {
     });
 
     auto future_detect = std::async(std::launch::async, [&] {
-        return detectOnce(frame.image().value_or(cv::Mat()), *car_detector_,
-                          *armor_detector_, iou_thresh_);
+        return detectRobots(frame.image().value_or(cv::Mat()), *car_detector_,
+                            *armor_detector_, iou_thresh_);
     });
 
     future_locate.get();

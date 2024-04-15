@@ -169,7 +169,7 @@ class Detector {
     int batch_size_{0};
 };
 
-std::vector<Robot> detectOnce(const cv::Mat& image, Detector& car_detector,
-                              Detector& armor_detector, float iou_thresh);
+std::vector<Robot> detectRobots(const cv::Mat& image, Detector& car_detector,
+                                Detector& armor_detector, float iou_thresh);
 
 }  // namespace radar

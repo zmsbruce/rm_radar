@@ -132,13 +132,9 @@ class KalmanFilter final : public Kalman<StateSize, MeasurementSize> {
                                         observation_matrix_.transpose() +
                                     observation_noise_;
 
-        // Here we use a solver for numerical stability instead of calculating
-        // the inverse
         const Eigen::Matrix<float, StateSize, MeasurementSize> kalman_gain =
             this->covariance_ * observation_matrix_.transpose() *
-            innovation_covariance.llt().solve(
-                Eigen::Matrix<float, MeasurementSize,
-                              MeasurementSize>::Identity());
+            innovation_covariance.inverse();
 
         this->state_ += kalman_gain * measurement_residual;
 
@@ -283,13 +279,9 @@ class ExtendedKalmanFilter final : public Kalman<StateSize, MeasurementSize> {
                                         observation_matrix_.transpose() +
                                     observation_noise_;
 
-        // Here we use a solver for numerical stability instead of calculating
-        // the inverse
         const Eigen::Matrix<float, StateSize, MeasurementSize> kalman_gain =
             this->covariance_ * observation_matrix_.transpose() *
-            innovation_covariance.llt().solve(
-                Eigen::Matrix<float, MeasurementSize,
-                              MeasurementSize>::Identity());
+            innovation_covariance.inverse();
 
         this->state_ += kalman_gain * measurement_residual;
 

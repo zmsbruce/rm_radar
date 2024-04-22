@@ -219,14 +219,12 @@ void Locator::update(
  * This method iterates over the differential depth image stored in
  * `diff_depth_image_` and collects non-zero points into a vector. Each point
  * contains the column (x), the row (y), and the depth value (z) from the depth
- * image. These points are then clustered using the DBSCAN algorithm implemented
- * in `dbscan_cluster_`, and then stored in an image
- *
- * @note This method is marked noexcept, which indicates that it does not throw
- * exceptions.
+ * image. These points are then clustered using the DBSCAN algorithm and then
+ * stored in an image.
  */
 void Locator::cluster() noexcept {
     cluster_map_.clear();
+    point_map_.clear();
 
     std::vector<cv::Point3f> points;
     for (int i = 0; i < diff_depth_image_.rows; ++i) {
@@ -236,17 +234,15 @@ void Locator::cluster() noexcept {
             if (iszero(value)) {
                 continue;
             }
-            points.emplace_back(cv::Point3f(j, i, value));
+            cv::Point3f lidar_point = cameraToLidar(cv::Point3f(j, i, value));
+            point_map_.emplace(cv::Point2i(j, i), lidar_point);
+            points.emplace_back(lidar_point);
         }
     }
 
     auto indices = dbscan_cluster_.run(std::span(points));
     for (size_t i = 0; i < points.size(); ++i) {
-        cv::Point3f point = points[i];
-        int index = indices[i];
-        cluster_map_.emplace(
-            cv::Point2i(static_cast<int>(point.x), static_cast<int>(point.y)),
-            index);
+        cluster_map_.emplace(points[i], indices[i]);
     }
 }
 
@@ -275,19 +271,19 @@ void Locator::search(Robot& robot) const noexcept {
             if (iszero(depth)) {
                 continue;
             }
-            int cluster_id = cluster_map_.at(cv::Point2i(u, v));
-            candidates[cluster_id].emplace_back(
-                cameraToLidar(cv::Point3f(u, v, depth)));
+            cv::Point3f lidar_point = point_map_.at(cv::Point2i(u, v));
+            int cluster_id = cluster_map_.at(lidar_point);
+            candidates[cluster_id].emplace_back(lidar_point);
         }
     }
 
     if (candidates.empty()) {
         return;
     }
-    auto& [_, points] =
-        *std::ranges::max_element(candidates, [](auto&& pair_a, auto&& pair_b) {
+    auto& points =
+        std::ranges::max_element(candidates, [](auto&& pair_a, auto&& pair_b) {
             return pair_a.second.size() < pair_b.second.size();
-        });
+        })->second;
     auto location = std::accumulate(points.begin(), points.end(),
                                     cv::Point3f(0.0f, 0.0f, 0.0f)) /
                     static_cast<float>(points.size());
@@ -316,7 +312,7 @@ void Locator::search(std::vector<Robot>& robots) const noexcept {
  * @return The transformed rectangle after applying zoom transform.
  *
  * @note The `zoom` factor is used to shrink the size of depth image in order to
- * accelerate speed of processing.
+ * accelerate processing.
  */
 cv::Rect Locator::zoom(const cv::Rect& rect) const noexcept {
     const cv::Rect image_rect(0, 0, image_width_zoomed_, image_height_zoomed_);

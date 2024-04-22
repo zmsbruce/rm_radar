@@ -34,13 +34,28 @@ namespace radar {
  * This struct defines a hash function for `cv::Point2i` objects. It combines
  * the hash values of the point's x and y using the XOR (^) operator.
  */
-struct CvPointHash {
+struct CvPoint2iHash {
     std::size_t operator()(const cv::Point2i& pt) const {
         std::size_t hx = std::hash<int>{}(pt.x);
         std::size_t hy = std::hash<int>{}(pt.y);
         return hx ^ hy;
     }
 };
+
+/**
+ * @brief Hash function for `cv::Point3f`.
+ *
+ * This struct defines a hash function for `cv::Point3f` objects. It combines
+ * the hash values of the point's x, y and z using the XOR (^) operator.
+ */
+struct CvPoint3fHash {
+    std::size_t operator()(const cv::Point3f& pt) const {
+        std::size_t hx = std::hash<float>{}(pt.x);
+        std::size_t hy = std::hash<float>{}(pt.y);
+        std::size_t hz = std::hash<float>{}(pt.z);
+        return hx ^ hy ^ hz;
+    }
+}
 
 /**
  * @brief Class for robot localization using sensor fusion of point cloud data.
@@ -88,7 +103,8 @@ class Locator {
     cv::Mat depth_image_, background_depth_image_, diff_depth_image_;
     std::deque<cv::Mat> depth_images_;
     locate::DBSCAN dbscan_cluster_;
-    std::unordered_map<cv::Point2i, int, CvPointHash> cluster_map_;
+    std::unordered_map<cv::Point3f, int, CvPoint3fHash> cluster_map_;
+    std::unordered_map<cv::Point2i, cv::Point3f, CvPoint2iHash> point_map_;
 };
 
 }  // namespace radar

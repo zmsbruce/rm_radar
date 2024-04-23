@@ -144,7 +144,7 @@ void Tracker::update(
     auto match_result = auction(cost_matrix, max_iter_);
     for (size_t robot_id = 0; robot_id < match_result.size(); ++robot_id) {
         auto& robot = robots[robot_id];
-        if (robot.isLocated()) {
+        if (!robot.isLocated()) {
             unmatched_robot_indices.emplace_back(robot_id);
             continue;
         }
@@ -176,8 +176,8 @@ void Tracker::update(
             if (track.init_count_ >= init_thresh_) {
                 track.setState(TrackState::Confirmed);
             }
-            track.miss_count_ = 0;
         }
+        track.miss_count_ = 0;
         // Updates robot
         robot.setTrack(track);
         // Marks the index of matched tracks

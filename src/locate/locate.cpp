@@ -114,8 +114,8 @@ Locator::Locator(int image_width, int image_height,
                  const cv::Matx44f& lidar_to_camera,
                  const cv::Matx44f& world_to_camera, float zoom_factor,
                  size_t queue_size, float min_depth_diff, float max_depth_diff,
-                 float cluster_epsilon, size_t min_cluster_point_num,
-                 float max_distance)
+                 float cluster_tolerance, int min_cluster_size,
+                 int max_cluster_size, float max_distance)
     : image_width_{image_width},
       image_height_{image_height},
       zoom_factor_{zoom_factor},
@@ -127,7 +127,8 @@ Locator::Locator(int image_width, int image_height,
       min_depth_diff_{min_depth_diff},
       max_depth_diff_{max_depth_diff},
       max_distance_{max_distance},
-      dbscan_cluster_{min_cluster_point_num, cluster_epsilon} {
+      kdtree_{new pcl::search::KdTree<pcl::PointXYZ>()},
+      cloud_foreground_{new pcl::PointCloud<pcl::PointXYZ>()} {
     intrinsic_inv_ = intrinsic.inv();
     cv::Matx44f camera_to_lidar = lidar_to_camera.inv();
     camera_to_lidar_rotate_ = camera_to_lidar.get_minor<3, 3>(0, 0);
@@ -137,6 +138,11 @@ Locator::Locator(int image_width, int image_height,
     background_depth_image_.create(image_height_zoomed_, image_width_zoomed_,
                                    CV_32F);
     diff_depth_image_.create(image_height_zoomed_, image_width_zoomed_, CV_32F);
+
+    cluster_extractor_.setClusterTolerance(cluster_tolerance);
+    cluster_extractor_.setMinClusterSize(min_cluster_size);
+    cluster_extractor_.setMaxClusterSize(max_cluster_size);
+    cluster_extractor_.setSearchMethod(kdtree_);
 }
 
 /**
@@ -223,10 +229,12 @@ void Locator::update(
  * stored in an image.
  */
 void Locator::cluster() noexcept {
-    cluster_map_.clear();
-    point_map_.clear();
+    point_index_map_.clear();
+    index_cluster_map_.clear();
+    clusters_.clear();
+    cloud_foreground_->clear();
 
-    std::vector<cv::Point3f> points;
+    int index = 0;
     for (int i = 0; i < diff_depth_image_.rows; ++i) {
         const float* image_row = diff_depth_image_.ptr<float>(i);
         for (int j = 0; j < diff_depth_image_.cols; ++j) {
@@ -235,14 +243,23 @@ void Locator::cluster() noexcept {
                 continue;
             }
             cv::Point3f lidar_point = cameraToLidar(cv::Point3f(j, i, value));
-            point_map_.emplace(cv::Point2i(j, i), lidar_point);
-            points.emplace_back(lidar_point);
+            cloud_foreground_->emplace_back(lidar_point.x, lidar_point.y,
+                                            lidar_point.z);
+            point_index_map_.emplace(cv::Point2i(i, j), index++);
         }
     }
 
-    auto indices = dbscan_cluster_.run(std::span(points));
-    for (size_t i = 0; i < points.size(); ++i) {
-        cluster_map_.emplace(points[i], indices[i]);
+    if (cloud_foreground_->empty()) {
+        return;
+    }
+    kdtree_->setInputCloud(cloud_foreground_);
+    cluster_extractor_.setInputCloud(cloud_foreground_);
+    cluster_extractor_.extract(clusters_);
+
+    for (size_t i = 0; i < clusters_.size(); ++i) {
+        for (int index : clusters_[i].indices) {
+            index_cluster_map_.emplace(index, i);
+        }
     }
 }
 
@@ -271,9 +288,12 @@ void Locator::search(Robot& robot) const noexcept {
             if (iszero(depth)) {
                 continue;
             }
-            cv::Point3f lidar_point = point_map_.at(cv::Point2i(u, v));
-            int cluster_id = cluster_map_.at(lidar_point);
-            candidates[cluster_id].emplace_back(lidar_point);
+            int index = point_index_map_.at(cv::Point2i(v, u));
+            int cluster_id = index_cluster_map_.contains(index)
+                                 ? index_cluster_map_.at(index)
+                                 : -1;
+            candidates[cluster_id].emplace_back(
+                cameraToLidar(cv::Point3f(u, v, depth)));
         }
     }
 

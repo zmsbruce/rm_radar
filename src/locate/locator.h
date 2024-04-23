@@ -14,8 +14,10 @@
 
 #pragma once
 
+#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 #include <deque>
 #include <functional>
@@ -23,7 +25,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "cluster.h"
 #include "robot/robot.h"
 
 namespace radar {
@@ -43,21 +44,6 @@ struct CvPoint2iHash {
 };
 
 /**
- * @brief Hash function for `cv::Point3f`.
- *
- * This struct defines a hash function for `cv::Point3f` objects. It combines
- * the hash values of the point's x, y and z using the XOR (^) operator.
- */
-struct CvPoint3fHash {
-    std::size_t operator()(const cv::Point3f& pt) const {
-        std::size_t hx = std::hash<float>{}(pt.x);
-        std::size_t hy = std::hash<float>{}(pt.y);
-        std::size_t hz = std::hash<float>{}(pt.z);
-        return hx ^ hy ^ hz;
-    }
-}
-
-/**
  * @brief Class for robot localization using sensor fusion of point cloud data.
  *
  * The Locator class performs robot localization by processing point cloud data.
@@ -74,8 +60,9 @@ class Locator {
             const cv::Matx44f& lidar_to_camera,
             const cv::Matx44f& world_to_camera, float zoom_factor = 0.5f,
             size_t queue_size = 3, float min_depth_diff = 500,
-            float max_depth_diff = 4000, float cluster_epsilon = 15,
-            size_t min_cluster_point_num = 10, float max_distance = 29300);
+            float max_depth_diff = 4000, float cluster_tolerance = 40,
+            int min_cluster_size = 8, int max_cluster_size = 1000,
+            float max_distance = 29300);
 
     void update(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept;
 
@@ -102,9 +89,12 @@ class Locator {
     float max_distance_;
     cv::Mat depth_image_, background_depth_image_, diff_depth_image_;
     std::deque<cv::Mat> depth_images_;
-    locate::DBSCAN dbscan_cluster_;
-    std::unordered_map<cv::Point3f, int, CvPoint3fHash> cluster_map_;
-    std::unordered_map<cv::Point2i, cv::Point3f, CvPoint2iHash> point_map_;
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> cluster_extractor_;
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree_;
+    std::unordered_map<cv::Point2i, int, CvPoint2iHash> point_index_map_;
+    std::map<int, int> index_cluster_map_;
+    std::vector<pcl::PointIndices> clusters_;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_foreground_;
 };
 
 }  // namespace radar

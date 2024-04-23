@@ -234,7 +234,6 @@ void Locator::cluster() noexcept {
     clusters_.clear();
     cloud_foreground_->clear();
 
-    int index = 0;
     for (int i = 0; i < diff_depth_image_.rows; ++i) {
         const float* image_row = diff_depth_image_.ptr<float>(i);
         for (int j = 0; j < diff_depth_image_.cols; ++j) {
@@ -245,7 +244,8 @@ void Locator::cluster() noexcept {
             cv::Point3f lidar_point = cameraToLidar(cv::Point3f(j, i, value));
             cloud_foreground_->emplace_back(lidar_point.x, lidar_point.y,
                                             lidar_point.z);
-            point_index_map_.emplace(cv::Point2i(i, j), index++);
+            point_index_map_.emplace(cv::Point2i(j, i),
+                                     cloud_foreground_->size() - 1);
         }
     }
 
@@ -288,7 +288,7 @@ void Locator::search(Robot& robot) const noexcept {
             if (iszero(depth)) {
                 continue;
             }
-            int index = point_index_map_.at(cv::Point2i(v, u));
+            int index = point_index_map_.at(cv::Point2i(u, v));
             int cluster_id = index_cluster_map_.contains(index)
                                  ? index_cluster_map_.at(index)
                                  : -1;

@@ -60,7 +60,7 @@ class Locator {
             const cv::Matx44f& lidar_to_camera,
             const cv::Matx44f& world_to_camera, float zoom_factor = 0.5f,
             size_t queue_size = 3, float min_depth_diff = 500,
-            float max_depth_diff = 4000, float cluster_tolerance = 40,
+            float max_depth_diff = 4000, float cluster_tolerance = 400,
             int min_cluster_size = 8, int max_cluster_size = 1000,
             float max_distance = 29300);
 

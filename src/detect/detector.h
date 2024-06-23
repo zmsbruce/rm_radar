@@ -169,7 +169,24 @@ class Detector {
     int batch_size_{0};
 };
 
-std::vector<Robot> detectRobots(const cv::Mat& image, Detector& car_detector,
-                                Detector& armor_detector, float iou_thresh);
+class RobotDetector {
+   public:
+    explicit RobotDetector(
+        std::string_view car_engine_path, std::string_view armor_engine_path,
+        int armor_classes, int max_cars, int opt_cars, float iou_thresh = 0.75f,
+        float car_nms_thresh = 0.65f, float car_conf_thresh = 0.25f,
+        float armor_nms_thresh = 0.65f, float armor_conf_thresh = 0.50f,
+        size_t image_size = 1 << 24, float input_width = 640,
+        float input_height = 640, std::string_view input_name = "images",
+        int input_channels = 3, int opt_level = 3);
+
+    std::vector<Robot> detect(const cv::Mat& image);
+
+   private:
+    RobotDetector() = delete;
+    float iou_thresh_;
+    std::unique_ptr<Detector> car_detector_, armor_detector_;
+    std::vector<cv::Mat> car_images_;
+};
 
 }  // namespace radar

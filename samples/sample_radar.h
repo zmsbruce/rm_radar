@@ -52,19 +52,15 @@ class SampleRadar {
      * @param world_to_camera The transform matrix(4x4) from world coordinate to
      * camera coordinate.
      * @param lidar_noise The uncertainty of points provided by the lidar(m).
-     * @param iou_thresh The Threshold IoU of decising whether the detections
      * are the same.
      */
     SampleRadar(std::string_view car_path, std::string_view armor_path,
                 cv::Size image_size, const cv::Matx33f& intrinsic,
                 const cv::Matx44f lidar_to_camera,
                 const cv::Matx44f& world_to_camera,
-                const cv::Point3f& lidar_noise, float iou_thresh = 0.75f)
-        : image_size_(image_size),
-          iou_thresh_(iou_thresh),
-          car_detector_(std::make_unique<Detector>(car_path, 1, 1)),
-          armor_detector_(std::make_unique<Detector>(
-              armor_path, kClassNum, kMaxBatchSize, kOptBatchSize)),
+                const cv::Point3f& lidar_noise)
+        : detector_(std::make_unique<RobotDetector>(
+              car_path, armor_path, kClassNum, kMaxBatchSize, kOptBatchSize)),
           locator_(std::make_unique<Locator>(image_size.width,
                                              image_size.height, intrinsic,
                                              lidar_to_camera, world_to_camera)),
@@ -81,9 +77,7 @@ class SampleRadar {
     SampleRadar() = delete;
     cv::Scalar cvColor(const Robot& robot);
 
-    const cv::Size image_size_;
-    const float iou_thresh_;
-    std::unique_ptr<Detector> car_detector_, armor_detector_;
+    std::unique_ptr<RobotDetector> detector_;
     std::unique_ptr<Locator> locator_;
     std::unique_ptr<Tracker> tracker_;
 };
@@ -116,8 +110,7 @@ std::vector<Robot> SampleRadar::runOnce(const Frame& frame) {
     });
 
     auto future_detect = std::async(std::launch::async, [&] {
-        return detectRobots(frame.image().value_or(cv::Mat()), *car_detector_,
-                            *armor_detector_, iou_thresh_);
+        return detector_->detect(frame.image().value_or(cv::Mat()));
     });
 
     future_locate.get();

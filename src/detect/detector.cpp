@@ -15,6 +15,7 @@
 #include <NvInferPlugin.h>
 #include <NvOnnxParser.h>
 
+#include <execution>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -347,6 +348,51 @@ static float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2) {
 }
 
 /**
+ * @brief Constructs a RobotDetector object.
+ *
+ * This constructor initializes the RobotDetector with the specified parameters
+ * for car detection and armor detection engines, as well as various thresholds
+ * and input configurations.
+ *
+ * @param car_engine_path The file path to the car detection engine.
+ * @param armor_engine_path The file path to the armor detection engine.
+ * @param armor_classes The number of armor classes.
+ * @param max_cars The maximum number of cars detected in one frame.
+ * @param opt_cars The optimized number of cars detected in one frame.
+ * @param iou_thresh The Intersection over Union (IoU) threshold for detection.
+ * @param car_nms_thresh The Non-Maximum Suppression (NMS) threshold for car
+ * detection.
+ * @param car_conf_thresh The confidence threshold for car detection.
+ * @param armor_nms_thresh The Non-Maximum Suppression (NMS) threshold for armor
+ * detection.
+ * @param armor_conf_thresh The confidence threshold for armor detection.
+ * @param image_size The size of the input images.
+ * @param input_width The width of the input images.
+ * @param input_height The height of the input images.
+ * @param input_name The name of the input node in the detection engine.
+ * @param input_channels The number of channels in the input images.
+ * @param opt_level The optimization level for the detection engine.
+ */
+RobotDetector::RobotDetector(std::string_view car_engine_path,
+                             std::string_view armor_engine_path,
+                             int armor_classes, int max_cars, int opt_cars,
+                             float iou_thresh, float car_nms_thresh,
+                             float car_conf_thresh, float armor_nms_thresh,
+                             float armor_conf_thresh, size_t image_size,
+                             float input_width, float input_height,
+                             std::string_view input_name, int input_channels,
+                             int opt_level)
+    : iou_thresh_(iou_thresh),
+      car_detector_(std::make_unique<Detector>(
+          car_engine_path, 1, 1, std::nullopt, image_size, car_nms_thresh,
+          car_conf_thresh, input_width, input_height, input_name,
+          input_channels, opt_level)),
+      armor_detector_(std::make_unique<Detector>(
+          armor_engine_path, armor_classes, max_cars, opt_cars, image_size,
+          armor_nms_thresh, armor_conf_thresh, input_width, input_height,
+          input_name, input_channels, opt_level)) {}
+
+/**
  * @brief Detects robots within an image using separate detectors for cars and
  * armor.
  *
@@ -358,31 +404,24 @@ static float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2) {
  * detections are referring to the same object.
  *
  * @param image The input image in which to detect robots.
- * @param car_detector The Detector object used to detect cars in the image.
- * @param armor_detector The Detector object used to detect armor in the car
- * sub-images.
- * @param iou_thresh The IoU (Intersection over Union) threshold used to resolve
- * overlaps in detections. If the IoU of two detections exceeds this threshold,
- * only the detection with the higher confidence score is retained.
  *
  * @return A `std::vector<Robot>` containing all detected robots. Each robot is
  * represented by a Robot object, which includes information about the car and
  * armor detections.
  */
-std::vector<Robot> detectRobots(const cv::Mat& image, Detector& car_detector,
-                                Detector& armor_detector, float iou_thresh) {
-    std::vector<cv::Mat> car_images;
-    auto car_detections = car_detector.detect(image);
-    car_images.reserve(car_detections.size());
-    std::for_each(car_detections.begin(), car_detections.end(),
-                  [&](const Detection& detection) {
+std::vector<Robot> RobotDetector::detect(const cv::Mat& image) {
+    car_images_.clear();
+    auto car_detections = car_detector_->detect(image);
+
+    std::for_each(std::execution::seq, car_detections.begin(),
+                  car_detections.end(), [&](const Detection& detection) {
                       cv::Mat car_image =
                           image(cv::Rect(detection.x, detection.y,
                                          detection.width, detection.height))
                               .clone();
-                      car_images.emplace_back(car_image);
+                      car_images_.emplace_back(std::move(car_image));
                   });
-    auto armor_detections_batch = armor_detector.detect(car_images);
+    auto armor_detections_batch = armor_detector_->detect(car_images_);
 
     std::vector<Robot> robots;
     robots.reserve(car_detections.size());
@@ -400,7 +439,7 @@ std::vector<Robot> detectRobots(const cv::Mat& image, Detector& car_detector,
         } else {
             auto& exist_robot = robots_map.at(label);
             if (computeIoU(exist_robot.rect().value(), robot.rect().value()) >
-                iou_thresh) {
+                iou_thresh_) {
                 continue;
             } else if (exist_robot.confidence().value() <
                        robot.confidence().value()) {

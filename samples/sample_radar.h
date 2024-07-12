@@ -75,7 +75,6 @@ class SampleRadar {
 
    private:
     SampleRadar() = delete;
-    cv::Scalar cvColor(const Robot& robot);
 
     std::unique_ptr<RobotDetector> detector_;
     std::unique_ptr<Locator> locator_;
@@ -132,7 +131,7 @@ std::vector<Robot> SampleRadar::runOnce(const Frame& frame) {
  * @param robot The robot class.
  * @return the `cv::Scalar` color
  */
-cv::Scalar SampleRadar::cvColor(const Robot& robot) {
+static cv::Scalar cvColor(const Robot& robot) {
     auto label = robot.label().value_or(-1);
     switch (label) {
         case Label::BlueHero:

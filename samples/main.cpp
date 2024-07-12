@@ -9,47 +9,17 @@
 
 #include "sample_radar.h"
 
-std::vector<cv::Mat> readImages(std::string_view folder_path);
-
-std::pair<pcl::PointCloud<pcl::PointXYZ>::Ptr,
-          std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>>
-readClouds(std::string_view folder_path);
-
-int main() {
-    cv::Size image_size(2592, 2048);
-    cv::Matx33f intrinsic(1685.51538398561, 0, 1278.99324114319, 0,
-                          1685.26471848220, 1037.21273138299, 0, 0, 1);
-    cv::Matx44f lidar_to_camera(0, -1, 0, 0.85443, 0, 0, -1, -37.6845, 1, 0, 0,
-                                12.2631, 0.0, 0.0, 0.0, 1.0);
-    cv::Matx44f world_to_camera(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-                                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-    cv::Point3f lidar_noise(0.4, 0.4, 0.4);
-
-    SampleRadar radar("../models/car.engine", "../models/armor.engine",
-                      image_size, intrinsic, lidar_to_camera, world_to_camera,
-                      lidar_noise);
-
-    auto images = readImages("../assets/images");
-    auto [background_cloud, clouds] = readClouds("../assets/clouds");
-    if (images.size() != clouds.size()) {
-        throw std::logic_error("sizes do not match");
-    }
-    const auto start_time = std::chrono::high_resolution_clock::now();
-    const auto duration = std::chrono::milliseconds(100);
-
-    radar.updateBackgroundCloud(background_cloud);
-
-    for (size_t i = 0; i < images.size(); ++i) {
-        const auto& image = images[i];
-        const auto& cloud = clouds[i];
-        const auto timestamp = start_time + i * duration;
-
-        Frame frame(image, cloud, timestamp);
-        radar.runOnce(frame);
-    }
-
-    return EXIT_SUCCESS;
-}
+const cv::Size image_size(2592, 2048);
+const cv::Matx33f intrinsic(1685.51538398561, 0, 1278.99324114319, 0,
+                            1685.26471848220, 1037.21273138299, 0, 0, 1);
+const cv::Matx44f lidar_to_camera(0, -1, 0, 0.85443, 0, 0, -1, -37.6845, 1, 0,
+                                  0, 12.2631, 0.0, 0.0, 0.0, 1.0);
+const cv::Matx44f world_to_camera(0.05975021, 0.99807031, 0.01689906,
+                                  -7179.65399136, 0.28962566, -0.00113262,
+                                  -0.95713933, -4671.34956587, -0.9552732,
+                                  0.06208368, -0.28913445, 28286.8920291, 0.0,
+                                  0.0, 0.0, 1.0);
+const cv::Point3f lidar_noise(0.4, 0.4, 0.4);
 
 std::vector<cv::Mat> readImages(std::string_view folder_path) {
     if (!std::filesystem::exists(folder_path)) {
@@ -99,4 +69,31 @@ auto readClouds(std::string_view folder_path)
     pcl::io::loadPCDFile(filename, *background_cloud);
 
     return std::make_pair(background_cloud, clouds);
+}
+
+int main() {
+    SampleRadar radar("../models/car.engine", "../models/armor.engine",
+                      image_size, intrinsic, lidar_to_camera, world_to_camera,
+                      lidar_noise);
+
+    auto images = readImages("../assets/images");
+    auto [background_cloud, clouds] = readClouds("../assets/clouds");
+    if (images.size() != clouds.size()) {
+        throw std::logic_error("sizes do not match");
+    }
+    const auto start_time = std::chrono::high_resolution_clock::now();
+    const auto duration = std::chrono::milliseconds(100);
+
+    radar.updateBackgroundCloud(background_cloud);
+
+    for (size_t i = 0; i < images.size(); ++i) {
+        const auto& image = images[i];
+        const auto& cloud = clouds[i];
+        const auto timestamp = start_time + i * duration;
+
+        Frame frame(image, cloud, timestamp);
+        radar.runOnce(frame);
+    }
+
+    return EXIT_SUCCESS;
 }

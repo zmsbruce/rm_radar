@@ -1,5 +1,5 @@
 /**
- * @file logger.h
+ * @file trt_logger.h
  * @author zmsbruce (zmsbruce@163.com)
  * @brief This file defines the Logger class to be used in NvInfer plugins.
  * @date 2024-04-11

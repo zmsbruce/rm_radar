@@ -25,10 +25,10 @@
 
 #include "common.h"
 #include "detection.h"
-#include "logger.h"
 #include "preparam.h"
 #include "robot/robot.h"
 #include "tensor.h"
+#include "trt_logger.h"
 
 namespace radar {
 

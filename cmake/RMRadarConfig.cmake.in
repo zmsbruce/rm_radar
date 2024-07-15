@@ -1,6 +1,0 @@
-@PACKAGE_INIT@
-
-set(RMRadar_INCLUDE_DIRS "@RMRadar_INCLUDE_DIRS@")
-set(RMRadar_LIBRARIES "@RMRadar_LIBRARIES@")
-
-include("${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Target.cmake")

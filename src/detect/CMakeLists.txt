@@ -12,11 +12,7 @@ target_include_directories(detector PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${TensorRT_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}
-)
-
-target_include_directories(detector PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
-    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+    ${PROJECT_SOURCE_DIR}/src
 )
 
 target_link_libraries(detector PUBLIC

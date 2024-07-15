@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./doc/images/readme/cover.png", width=75%>
+<img src="./doc/images/readme/cover.png">
 </div>
 
 <br>
@@ -60,36 +60,11 @@ cd rm_radar
 # compile
 mkdir build && cd build
 cmake ..
-make
+make -j$(nproc)
 
 # test
 ctest
 
 # run sample
-cd ../bin
-./sample
-
-# install
-sudo make install
-
-# uninstall
-sudo make uninstall
+../bin/sample
 ```
-
-#### <div align="center"> 3.3 使用 🧐 </div>
-
-安装后，使用如下方式即可引入头文件以及命名空间：
-
-```cpp
-#include <RMRadar/radar.h>
-
-using namespace radar;
-```
-
-查看[示例代码](./samples/sample_radar.h)可以帮助你更快速地了解和使用。
-
-> 注意：您建立的项目也需要**支持 C++20**，否则可能会发生编译相关错误。
-
-### <div align="center"> 4. 联系我 📧 </div>
-
-如果有任何问题以及 bug，可以在 Issue 上进行提问，或发送邮件到 zmsbruce@163.com。

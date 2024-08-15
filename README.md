@@ -70,3 +70,7 @@ ctest
 # run sample
 ../bin/sample
 ```
+
+### <div align="center"> 4. 联系我 📧 </div>
+
+如果对代码有疑问，或者想指出代码中的错误，可以通过邮件联系我：[zmsbruce@163.com](zmsbruce@163.com)。

@@ -31,10 +31,12 @@ namespace radar::detect {
 class Tensor {
    public:
     Tensor() : device_ptr_{nullptr} {}
+
     Tensor(Tensor&& rhs) : name_{rhs.name_}, device_ptr_{rhs.device_ptr_} {
         // Prevent repeated release of device resources
         rhs.device_ptr_ = nullptr;
     }
+
     Tensor& operator=(Tensor&& rhs) {
         if (this != &rhs) {
             dims_ = rhs.dims_;
@@ -45,6 +47,23 @@ class Tensor {
         }
         return *this;
     }
+
+    /**
+     * @brief The Tensor class does not allow copying and copy assignment,
+     * because the existence of two same device pointers at the same time will
+     * cause two cudaFrees in one specific address during destruction.
+     *
+     */
+    Tensor(const Tensor& rhs) = delete;
+
+    /**
+     * @brief The Tensor class does not allow copying and copy assignment,
+     * because the existence of two same device pointers at the same time will
+     * cause two cudaFrees in one specific address during destruction.
+     *
+     */
+    Tensor& operator=(const Tensor& rhs) = delete;
+
     ~Tensor() {
         if (device_ptr_) {
             try {
@@ -99,21 +118,6 @@ class Tensor {
     inline nvinfer1::Dims dims() const noexcept { return dims_; }
 
    private:
-    /**
-     * @brief The Tensor class does not allow copying and copy assignment,
-     * because the existence of two same device pointers at the same time will
-     * cause two cudaFrees in one specific address during destruction.
-     *
-     */
-    Tensor(const Tensor& rhs) = delete;
-
-    /**
-     * @brief The Tensor class does not allow copying and copy assignment,
-     * because the existence of two same device pointers at the same time will
-     * cause two cudaFrees in one specific address during destruction.
-     *
-     */
-    Tensor& operator=(const Tensor& rhs) = delete;
     std::string_view name_;
     nvinfer1::Dims dims_;
     void* device_ptr_;

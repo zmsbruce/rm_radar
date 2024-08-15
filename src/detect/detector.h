@@ -178,12 +178,13 @@ class RobotDetector {
         float armor_nms_thresh = 0.65f, float armor_conf_thresh = 0.50f,
         size_t image_size = 1 << 24, float input_width = 640,
         float input_height = 640, std::string_view input_name = "images",
-        int input_channels = 3, int opt_level = 3);
+        int input_channels = 3, int opt_level = 5);
+
+    RobotDetector() = delete;
 
     std::vector<Robot> detect(const cv::Mat& image);
 
    private:
-    RobotDetector() = delete;
     float iou_thresh_;
     std::unique_ptr<Detector> car_detector_, armor_detector_;
     std::vector<cv::Mat> car_images_;

@@ -36,7 +36,7 @@ list(APPEND TensorRT_PATHS "/usr" "${TensorRT_PATHS_}")
 
 # Find TensorRT include directory
 foreach(search ${TensorRT_PATHS})
-    find_path(TensorRT_INCLUDE_DIR NAMES NvInfer.h PATHS ${search}/include)
+    find_path(TensorRT_INCLUDE_DIR NAMES NvInfer.h PATHS ${search}/include ${search}/include/x86_64-linux-gnu)
     if (TensorRT_INCLUDE_DIR)
         break()
     endif()
@@ -44,9 +44,9 @@ endforeach()
 
 # Find TensorRT libraries
 foreach(search ${TensorRT_PATHS})
-    find_library(NVONNX_PARSER_LIB NAMES nvonnxparser PATHS ${search}/lib)
-    find_library(NVINFER_LIB NAMES nvinfer PATHS ${search}/lib)
-    find_library(NVINFER_PLUGIN_LIB NAMES nvinfer_plugin PATHS ${search}/lib)
+    find_library(NVONNX_PARSER_LIB NAMES nvonnxparser PATHS ${search}/lib ${search}/include/x86_64-linux-gnu)
+    find_library(NVINFER_LIB NAMES nvinfer PATHS ${search}/lib ${search}/include/x86_64-linux-gnu)
+    find_library(NVINFER_PLUGIN_LIB NAMES nvinfer_plugin PATHS ${search}/lib ${search}/include/x86_64-linux-gnu)
     if (NVONNX_PARSER_LIB AND NVINFER_LIB AND NVINFER_PLUGIN_LIB)
         break()
     endif()

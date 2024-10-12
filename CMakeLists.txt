@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS_RELEASE "-w -Ofast -DNDEBUG -flto -march=native")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG -Wall -Wextra")
 
-set(CMAKE_CUDA_ARCHITECTURES "52;61;75;86")
+set(CMAKE_CUDA_ARCHITECTURES "52;61;75;86;89")
 set(CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr --std=c++20")
 set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0") 
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3 --use_fast_math")

@@ -50,7 +50,8 @@ _<div align="right">by zmsbruce</div>_
 - 需要 CMake 版本不低于 3.19，以完整支持 CUDA Toolkit 包的获取与配置；
 - 需要 CUDA 版本不低于 12.2，TensorRT 版本不低于 8.5；
 - 需要 OpenCV, PCL, Eigen 库以支持图像、点云处理和目标跟踪；
-- 为了确保顺利编译，建议安装 TBB, VTK 库；
+- 需要 GTest 库以支持测试；
+- 为了确保顺利编译，建议安装 TBB, VTK, FFI 库；
 
 #### <div align="center"> 3.2 编译与运行 🛠️ </div>
 

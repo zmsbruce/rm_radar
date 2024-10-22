@@ -54,6 +54,8 @@ class Robot {
    public:
     Robot(const Detection& car, const std::vector<Detection>& armors);
 
+    Robot() = default;
+
     /**
      * @brief Returns whether the robot is detected depending on
      * whether the armors are set.
@@ -153,7 +155,6 @@ class Robot {
     friend std::ostream& operator<<(std::ostream& os, const Robot& robot);
 
    private:
-    Robot() = delete;
     std::optional<std::vector<Detection>> armors_ = std::nullopt;
     std::optional<TrackState> track_state_ = std::nullopt;
     std::optional<cv::Point3f> location_ = std::nullopt;

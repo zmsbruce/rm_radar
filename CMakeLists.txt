@@ -17,9 +17,13 @@ set(CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr --std=c++20")
 set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0") 
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3 --use_fast_math")
 
+# Force all targets to generate position-independent code
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 enable_testing()
 
 add_subdirectory(src)
 add_subdirectory(test)
+add_subdirectory(third_party)

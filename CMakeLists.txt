@@ -24,6 +24,15 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 enable_testing()
 
+include(FetchContent)
+
+# Use FetchContent to download spdlog
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG        v1.14.1
+)
+FetchContent_MakeAvailable(spdlog)
+
 add_subdirectory(src)
 add_subdirectory(test)
-add_subdirectory(third_party)

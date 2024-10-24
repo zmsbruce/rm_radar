@@ -14,6 +14,7 @@
 
 #include <NvInfer.h>
 #include <cuda_runtime.h>
+#include <spdlog/spdlog.h>
 
 #include <iostream>
 #include <numeric>
@@ -86,14 +87,26 @@ class Tensor {
     explicit Tensor(const nvinfer1::Dims& dims, nvinfer1::DataType dtype,
                     const char* name, int max_batch_size)
         : name_{name}, dims_{dims} {
+        spdlog::debug("Initializing Tensor: name = '{}', max_batch_size = {}",
+                      name, max_batch_size);
+        spdlog::debug("Tensor dimensions: nbDims = {}", dims.nbDims);
+
         if (dims.d[0] != -1 && dims.d[0] != max_batch_size) {
-            throw std::logic_error("invalid dims");
+            spdlog::warn(
+                "Invalid dimensions. dims.d[0] = {}, expected = {}, dims.d[0] "
+                "will be ignored",
+                dims.d[0], max_batch_size);
         }
         // Start with dims.d[1] because dims.d[0] is -1 in dynamic network.
         auto dim_size{std::accumulate(dims.d + 1, dims.d + dims.nbDims, 1,
                                       std::multiplies<int32_t>())};
-        CUDA_CHECK(cudaMalloc(
-            &device_ptr_, dim_size * sizeOfDataType(dtype) * max_batch_size));
+
+        size_t total_size = dim_size * sizeOfDataType(dtype) * max_batch_size;
+        spdlog::debug("Allocating {} bytes of device memory for Tensor '{}'",
+                      total_size, name);
+
+        CUDA_CHECK(cudaMalloc(&device_ptr_, total_size));
+        spdlog::debug("Tensor '{}' successfully allocated device memory", name);
     }
 
     /**

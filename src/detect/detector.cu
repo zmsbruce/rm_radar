@@ -378,44 +378,84 @@ using namespace radar::detect;
  * `input_channels_` or it will trigger assertion failure.
  */
 std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
-    assert(image.channels() == input_channels_);
+    spdlog::debug("Starting preprocessing single image.");
 
+    // Make sure the input image meets expectations
+    assert(!image.empty() && image.channels() == input_channels_);
+    spdlog::trace("Processing image with size: {}x{} and {} channels.",
+                  image.cols, image.rows, image.channels());
+
+    // Defining CUDA block and grid sizes
     dim3 block_size(16, 16);
     dim3 grid_size;
 
     batch_size_ = 1;
+    spdlog::debug("Batch size set to 1.");
 
+    // Copy image data to image_ptr_
     std::memcpy(image_ptr_, image.data,
                 image.total() * image.elemSize() * sizeof(unsigned char));
+    spdlog::debug("Copied image data to device memory.");
 
     auto& stream{streams_[0]};
 
+    // Calculate preprocessing parameters
     PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
     float padding_width{pparam.width / pparam.ratio};
     float padding_height{pparam.height / pparam.ratio};
+    spdlog::trace(
+        "PreParam: width = {}, height = {}, ratio = {}, padding_width = {}, "
+        "padding_height = {}",
+        pparam.width, pparam.height, pparam.ratio, padding_width,
+        padding_height);
+
+    // Calculate the grid size for the resize kernel
     grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
                      (padding_height + block_size.y - 1) / block_size.y);
+    spdlog::trace("Grid size for resize kernel: ({}, {})", grid_size.x,
+                  grid_size.y);
+
+    // Call the resize kernel
     resizeKernel<<<grid_size, block_size, 0, stream>>>(
         image_ptr_, dev_resize_ptr_, input_channels_, pparam.width,
         pparam.height, padding_width, padding_height);
+    spdlog::debug("Resize kernel launched.");
 
+    // Calculate the top, bottom, left and right values ​​of the border
     int top{static_cast<int>(std::round(pparam.dh - 0.1))};
     int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
     int left{static_cast<int>(std::round(pparam.dw - 0.1))};
     int right{static_cast<int>(std::round(pparam.dw + 0.1))};
+    spdlog::trace("Border values: top = {}, bottom = {}, left = {}, right = {}",
+                  top, bottom, left, right);
+
+    // Calculate the grid size for the copyMakeBorder kernel
     grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
                      (input_height_ + block_size.y - 1) / block_size.y);
+    spdlog::trace("Grid size for copyMakeBorder kernel: ({}, {})", grid_size.x,
+                  grid_size.y);
+
     copyMakeBorderKernel<<<grid_size, block_size, 0, stream>>>(
         dev_resize_ptr_, dev_border_ptr_, input_channels_, padding_width,
         padding_height, top, bottom, left, right);
+    spdlog::debug("copyMakeBorder kernel launched.");
 
+    // Call the blob kernel
     blobKernel<<<grid_size, block_size, 0, stream>>>(
         dev_border_ptr_, static_cast<float*>(input_tensor_.data()),
         input_width_, input_height_, input_channels_, 1 / 255.f);
+    spdlog::debug("Blob kernel launched.");
 
+    // Set the shape of the input tensor
     context_->setInputShape(input_tensor_.name(),
                             nvinfer1::Dims4(batch_size_, input_channels_,
                                             input_width_, input_height_));
+    spdlog::debug(
+        "Set input tensor shape: batch_size = {}, channels = {}, width = {}, "
+        "height = {}",
+        batch_size_, input_channels_, input_width_, input_height_);
+
+    spdlog::debug("Preprocessing completed.");
 
     return std::vector<PreParam>{pparam};
 }
@@ -438,66 +478,117 @@ std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
  */
 std::vector<PreParam> Detector::preprocess(
     const std::span<cv::Mat> images) noexcept {
+    spdlog::debug("Starting preprocessing of {} images.", images.size());
+
+    // Set block and grid sizes for CUDA kernels
     dim3 block_size(16, 16);
     dim3 grid_size;
 
+    // Set the batch size
     batch_size_ = images.size();
+    spdlog::debug("Batch size set to {}.", batch_size_);
 
+    // Prepare vector for preprocessed parameters
     std::vector<PreParam> pparams;
     pparams.reserve(batch_size_);
 
+    // Initialize offsets for image, resize, and input memory
     size_t offset_image{0}, offset_resize{0}, offset_input{0};
 
+    // Loop through each image in the batch
     for (size_t i = 0; i < batch_size_; ++i) {
         cv::Mat& image = images[i];
 
-        assert(image.channels() == input_channels_);
+        // Ensure the input image is not empty and has the expected number of
+        // channels
+        assert(!image.empty() && image.channels() == input_channels_);
+        spdlog::trace("Processing image {} with size: {}x{} and {} channels.",
+                      i, image.cols, image.rows, image.channels());
 
+        // Copy image data to device memory at the current offset
         std::memcpy(image_ptr_ + offset_image, image.data,
                     image.total() * image.elemSize() * sizeof(unsigned char));
+        spdlog::trace("Copied image {} data to device memory (offset: {}).", i,
+                      offset_image);
 
+        // Compute preprocessing parameters
         PreParam pparam(image.size(), cv::Size(input_width_, input_height_));
 
         float padding_width{pparam.width / pparam.ratio};
         float padding_height{pparam.height / pparam.ratio};
         grid_size = dim3((padding_width + block_size.x - 1) / block_size.x,
                          (padding_height + block_size.y - 1) / block_size.y);
+        spdlog::trace("Grid size for resize kernel on image {}: ({}, {}).", i,
+                      grid_size.x, grid_size.y);
+
+        // Launch resize kernel
         resizeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             image_ptr_ + offset_image, dev_resize_ptr_ + offset_resize,
             input_channels_, pparam.width, pparam.height, padding_width,
             padding_height);
+        spdlog::debug("Resize kernel launched for image {}.", i);
 
+        // Compute border values based on the PreParam object
         int top{static_cast<int>(std::round(pparam.dh - 0.1))};
         int bottom{static_cast<int>(std::round(pparam.dh + 0.1))};
         int left{static_cast<int>(std::round(pparam.dw - 0.1))};
         int right{static_cast<int>(std::round(pparam.dw + 0.1))};
+        spdlog::trace(
+            "Border values for image {}: top = {}, bottom = {}, left = {}, "
+            "right = {}.",
+            i, top, bottom, left, right);
+
+        // Set grid size for the border kernel
         grid_size = dim3((input_width_ + block_size.x - 1) / block_size.x,
                          (input_height_ + block_size.y - 1) / block_size.y);
+        spdlog::trace(
+            "Grid size for copyMakeBorder kernel on image {}: ({}, {}).", i,
+            grid_size.x, grid_size.y);
+
+        // Launch copyMakeBorder kernel
         copyMakeBorderKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_resize_ptr_ + offset_resize, dev_border_ptr_ + offset_input,
             input_channels_, padding_width, padding_height, top, bottom, left,
             right);
+        spdlog::debug("copyMakeBorder kernel launched for image {}.", i);
 
+        // Launch blob kernel
         blobKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_border_ptr_ + offset_input,
             static_cast<float*>(input_tensor_.data()) + offset_input,
             input_width_, input_height_, input_channels_, 1 / 255.f);
+        spdlog::debug("Blob kernel launched for image {}.", i);
 
+        // Update offsets for the next image
         offset_image += image.total() * image.elemSize();
         offset_resize += padding_height * padding_width * input_channels_;
         offset_input += input_width_ * input_height_ * input_channels_;
+        spdlog::trace(
+            "Updated offsets: offset_image = {}, offset_resize = {}, "
+            "offset_input = {}.",
+            offset_image, offset_resize, offset_input);
 
+        // Store preprocessing parameter for this image
         pparams.emplace_back(pparam);
     }
 
+    // Set input tensor shape for the batch
     context_->setInputShape(input_tensor_.name(),
                             nvinfer1::Dims4(batch_size_, input_channels_,
                                             input_width_, input_height_));
+    spdlog::debug(
+        "Input tensor shape set: batch_size = {}, channels = {}, width = {}, "
+        "height = {}.",
+        batch_size_, input_channels_, input_width_, input_height_);
 
+    // Synchronize all CUDA streams
+    spdlog::debug("Synchronizing {} CUDA streams.", batch_size_);
     std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
         CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
     });
+    spdlog::debug("All CUDA streams synchronized.");
 
+    spdlog::debug("Preprocessing completed.");
     return pparams;
 }
 
@@ -521,63 +612,111 @@ std::vector<PreParam> Detector::preprocess(
  */
 std::vector<std::vector<Detection>> Detector::postprocess(
     std::span<PreParam> pparams) noexcept {
+    spdlog::debug("Starting postprocessing for {} images.", batch_size_);
+
     size_t offset_output{0}, offset_decode{0};
 
     dim3 block_size, grid_size;
+
+    // Iterate through the batch
     for (int i = 0; i < batch_size_; ++i) {
+        spdlog::trace("Processing image {} in the batch.", i);
+
+        // Set block and grid sizes for transpose kernel
         block_size = dim3(32, 32);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_channels_ + block_size.y - 1) / block_size.y);
+        spdlog::trace(
+            "Grid size for transpose kernel: ({}, {}), block size: ({}, {}).",
+            grid_size.x, grid_size.y, block_size.x, block_size.y);
+
+        // Launch transpose kernel
         transposeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             static_cast<float*>(output_tensor_.data()) + offset_output,
             dev_transpose_ptr_ + offset_output, output_channels_,
             output_anchors_);
+        spdlog::debug("Transpose kernel launched for image {}.", i);
 
+        // Set block and grid sizes for decode kernel
         block_size = dim3(32);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x);
+        spdlog::trace("Grid size for decode kernel: ({}, {}), block size: {}.",
+                      grid_size.x, grid_size.y, block_size.x);
+        // Launch decode kernel
         decodeKernel<<<grid_size, block_size, 0, streams_[i]>>>(
             dev_transpose_ptr_ + offset_output, dev_decode_ptr_ + offset_decode,
             output_channels_, output_anchors_, classes_);
+        spdlog::debug("Decode kernel launched for image {}.", i);
 
+        // Set block and grid sizes for NMS (Non-Maximum Suppression) kernel
         block_size = dim3(16 * 16);
         grid_size = dim3((output_anchors_ + block_size.x - 1) / block_size.x,
                          (output_anchors_ + block_size.x - 1) / block_size.x);
+        spdlog::trace("Grid size for NMS kernel: ({}, {}), block size: {}.",
+                      grid_size.x, grid_size.y, block_size.x);
+        // Launch NMS kernel
         NMSKernel<<<grid_size, block_size, block_size.x * sizeof(Detection),
                     streams_[i]>>>(dev_decode_ptr_ + offset_decode, nms_thresh_,
                                    conf_thresh_, output_anchors_);
+        spdlog::debug("NMS kernel launched for image {}.", i);
 
+        // Copy the NMS results back to host memory asynchronously
         cudaMemcpyAsync(nms_ptr_, dev_decode_ptr_,
                         output_anchors_ * batch_size_ * sizeof(Detection),
                         cudaMemcpyDeviceToHost, streams_[i]);
+        spdlog::debug(
+            "Asynchronous copy from device to host initiated for image {}.", i);
 
+        // Update offsets for the next image
         offset_output += output_channels_ * output_anchors_;
         offset_decode += sizeof(Detection) / sizeof(float) * output_anchors_;
+        spdlog::trace(
+            "Updated offsets: offset_output = {}, offset_decode = {}.",
+            offset_output, offset_decode);
     }
 
+    // Synchronize all CUDA streams
+    spdlog::debug("Synchronizing {} CUDA streams.", batch_size_);
     std::for_each_n(streams_.begin(), batch_size_, [this](auto&& stream) {
         CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(stream));
     });
+    spdlog::debug("All CUDA streams synchronized.");
 
+    // Prepare the results for each image
     std::vector<std::vector<Detection>> results(batch_size_);
+    spdlog::debug("Starting final postprocessing on the host.");
+
+    // Parallel process the detections for each image
     std::for_each(
         std::execution::par_unseq, results.begin(), results.end(),
         [&](std::vector<Detection>& result) {
+            // Calculate the index of the current image
             int i = &result - &results[0];
+            spdlog::trace("Postprocessing detections for image {}.", i);
+
+            // Get the span of detections for the current image
             std::span<Detection> detections(
                 reinterpret_cast<Detection*>(nms_ptr_) + output_anchors_ * i,
                 output_anchors_);
+
+            // Filter out NaN detections
             auto nan_filtered_detections =
                 detections | std::views::filter([](const auto& detection) {
                     return !std::isnan(detection.label);
                 });
 
+            // Get the corresponding PreParam for the current image
             const auto& pparam{pparams[i]};
+            // Restore each valid detection and add it to the result
             for (auto& detection : nan_filtered_detections) {
                 restoreDetection(detection, pparam);
                 result.emplace_back(detection);
             }
+
+            spdlog::trace("Completed postprocessing for image {}.", i);
         });
 
+    spdlog::debug("Postprocessing complete. Returning results.");
     return results;
 }
 

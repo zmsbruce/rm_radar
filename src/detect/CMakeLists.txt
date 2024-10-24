@@ -21,4 +21,5 @@ target_link_libraries(detector PUBLIC
     ${TensorRT_LIBRARIES}
     TBB::tbb
     robot
+    spdlog::spdlog
 )

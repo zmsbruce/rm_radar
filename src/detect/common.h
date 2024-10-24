@@ -14,6 +14,7 @@
 
 #include <NvInfer.h>
 #include <cuda_runtime.h>
+#include <spdlog/spdlog.h>
 
 #include <stdexcept>
 
@@ -32,9 +33,8 @@
     do {                                                            \
         const cudaError_t error_code = call;                        \
         if (error_code != cudaSuccess) {                            \
-            std::stringstream ss;                                   \
-            ss << "CUDA Error: " << cudaGetErrorString(error_code); \
-            throw std::runtime_error(ss.str());                     \
+            throw std::runtime_error(fmt::format(                   \
+                "CUDA Error: {}", cudaGetErrorString(error_code))); \
         }                                                           \
     } while (0)
 
@@ -51,14 +51,14 @@
  * @note This macro is intended for use in functions that do not allow
  * exceptions (e.g., noexcept).
  */
-#define CUDA_CHECK_NOEXCEPT(call)                                         \
-    do {                                                                  \
-        const cudaError_t error_code = call;                              \
-        if (error_code != cudaSuccess) {                                  \
-            std::cerr << "CUDA Error: " << cudaGetErrorString(error_code) \
-                      << std::endl;                                       \
-            std::abort();                                                 \
-        }                                                                 \
+#define CUDA_CHECK_NOEXCEPT(call)                             \
+    do {                                                      \
+        const cudaError_t error_code = call;                  \
+        if (error_code != cudaSuccess) {                      \
+            spdlog::critical("CUDA Error: {}",                \
+                             cudaGetErrorString(error_code)); \
+            std::abort();                                     \
+        }                                                     \
     } while (0)
 
 namespace radar::detect {

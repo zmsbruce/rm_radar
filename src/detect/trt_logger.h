@@ -12,6 +12,7 @@
 #pragma once
 
 #include <NvInfer.h>
+#include <spdlog/spdlog.h>
 
 #include <iostream>
 
@@ -47,22 +48,22 @@ class Logger : public nvinfer1::ILogger {
         }
         switch (severity) {
             case Severity::kINTERNAL_ERROR:
-                std::cerr << "[Fatal] " << msg << std::endl;
+                spdlog::critical("{}", msg);
                 std::abort();
             case Severity::kERROR:
-                std::cerr << "[Error] " << msg << std::endl;
-                std::abort();
+                spdlog::error("{}", msg);
+                break;
             case Severity::kWARNING:
-                std::cerr << "[Warning] " << msg << std::endl;
+                spdlog::warn("{}", msg);
                 break;
             case Severity::kINFO:
-                std::cout << "[Info] " << msg << std::endl;
+                spdlog::info("{}", msg);
                 break;
             case Severity::kVERBOSE:
-                std::cout << "[Verbose] " << msg << std::endl;
+                spdlog::trace("{}", msg);
                 break;
             default:
-                std::cerr << "[Unknown] " << msg << std::endl;
+                break;
         }
     }
 

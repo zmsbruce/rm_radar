@@ -117,19 +117,48 @@ class Detector {
      */
     template <ImageOrImages T>
     auto detect(T&& input) noexcept {
-        std::vector<detect::PreParam> pparams{
-            preprocess(std::forward<T>(input))};
+        spdlog::debug("Starting detection.");
 
-        context_->enqueueV3(streams_[0]);
-        if constexpr (!std::is_same_v<std::decay_t<T>, cv::Mat>) {
-            CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(streams_[0]));
+        if constexpr (std::is_same_v<std::decay_t<T>, cv::Mat>) {
+            if (input.empty()) {
+                spdlog::error(
+                    "Input image is empty, will skip detection and return "
+                    "empty result.");
+                return std::vector<Detection>();
+            }
+        } else {
+            if (std::ranges::any_of(
+                    input, [](const auto& image) { return image.empty(); })) {
+                spdlog::error(
+                    "Empty image exists in batch, will skip detection and "
+                    "return empty result.");
+                return std::vector<std::vector<Detection>>();
+            }
         }
 
+        std::vector<detect::PreParam> pparams{
+            preprocess(std::forward<T>(input))};
+        spdlog::debug(
+            "Preprocessing completed. Number of preprocessed parameters: {}",
+            pparams.size());
+
+        spdlog::debug("Enqueuing inference context.");
+        context_->enqueueV3(streams_[0]);
+        if constexpr (!std::is_same_v<std::decay_t<T>, cv::Mat>) {
+            spdlog::debug("Input is a batch, synchronizing CUDA stream.");
+            CUDA_CHECK_NOEXCEPT(cudaStreamSynchronize(streams_[0]));
+            spdlog::debug("CUDA stream synchronized.");
+        }
+
+        spdlog::debug("Postprocessing detection results.");
         auto detections{postprocess(pparams)};
 
         if constexpr (std::is_same_v<std::decay_t<T>, cv::Mat>) {
+            spdlog::debug(
+                "Returning single detection result for cv::Mat input.");
             return detections[0];
         } else {
+            spdlog::debug("Returning detection results for batch input.");
             return detections;
         }
     }
@@ -182,7 +211,7 @@ class RobotDetector {
 
     RobotDetector() = delete;
 
-    std::vector<Robot> detect(const cv::Mat& image);
+    std::vector<Robot> detect(const cv::Mat& image) noexcept;
 
    private:
     float iou_thresh_;

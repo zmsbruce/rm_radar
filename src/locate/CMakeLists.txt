@@ -16,4 +16,5 @@ target_link_libraries(locator PUBLIC
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
     robot
+    spdlog::spdlog
 )

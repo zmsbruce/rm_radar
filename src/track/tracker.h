@@ -29,15 +29,15 @@ class Tracker {
             float distance_weight = 0.40f, float feature_weight = 0.60f,
             int max_iter = 100, float distance_thresh = 0.8f);
 
-    void update(
-        std::vector<Robot>& robots,
-        const std::chrono::high_resolution_clock::time_point& timestamp);
+    void update(std::vector<Robot>& robots,
+                const std::chrono::high_resolution_clock::time_point&
+                    timestamp) noexcept;
 
    private:
-    float calculateCost(const Track& track, const Robot& robot);
+    float calculateCost(const Track& track, const Robot& robot) const noexcept;
 
     static float calculateDistance(const cv::Point3f& p1,
-                                   const cv::Point3f& p2);
+                                   const cv::Point3f& p2) noexcept;
 
     const int class_num_;
     const int init_thresh_;

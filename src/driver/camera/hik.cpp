@@ -2,8 +2,9 @@
 
 #include <spdlog/spdlog.h>
 
-#include <span>
 #include <thread>
+#include <unordered_set>
+#include <vector>
 
 #define CALL_AND_CHECK(func, msg, ...)                               \
     do {                                                             \
@@ -75,12 +76,10 @@ bool HikCamera::open() {
     CALL_AND_CHECK(MV_CC_GetPixelFormat, "get pixel format", handle_, &val);
     auto supported_pixel_format =
         std::span(val.nSupportValue, val.nSupportedNum);
-    spdlog::info("Supported pixel format: [{:#x}]",
-                 fmt::join(supported_pixel_format, ", "));
+    spdlog::debug("Supported pixel format: [{:#x}]",
+                  fmt::join(supported_pixel_format, ", "));
 
-    // todo: add condition that RGB8Packed is not supported
-    CALL_AND_CHECK(MV_CC_SetPixelFormat, "set pixel format", handle_,
-                   static_cast<unsigned int>(PixelFormat::RGB8Packed));
+    setPixelType(supported_pixel_format);
 
     if (!setResolutionInner() || !setBalanceRatioInner() ||
         !setExposureInner() || !setGammaInner() || !setGainInner()) {
@@ -148,31 +147,34 @@ bool HikCamera::grabImage(cv::Mat& image,
     image =
         cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
                 CV_8UC3, frame_out_->pBufAddr);
+    convertPixelFormat(image, pixel_format);
 
-    switch (pixel_format) {
-        case camera::PixelFormat::GRAY:
-            cv::cvtColor(image, image, cv::COLOR_RGB2GRAY);
+    return true;
+}
+
+bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
+    const std::vector<PixelType> candidate_types{
+        PixelType::RGB8Packed,    PixelType::BayerBG8, PixelType::BayerGB8,
+        PixelType::BayerGR8,      PixelType::BayerRG8, PixelType::YUV422_8,
+        PixelType::YUV422_8_UYVY,
+    };
+    const std::unordered_set<unsigned int> supported_types_set(
+        supported_types.begin(), supported_types.end());
+
+    for (PixelType type : candidate_types) {
+        if (supported_types_set.contains(static_cast<unsigned int>(type))) {
+            pixel_type_ = type;
             break;
-        case camera::PixelFormat::BGR:
-            cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
-            break;
-        case camera::PixelFormat::BGRA:
-            cv::cvtColor(image, image, cv::COLOR_RGB2BGRA);
-            break;
-        case camera::PixelFormat::RGB:
-            break;
-        case camera::PixelFormat::RGBA:
-            cv::cvtColor(image, image, cv::COLOR_RGB2RGBA);
-            break;
-        case camera::PixelFormat::HSV:
-            cv::cvtColor(image, image, cv::COLOR_RGB2HSV);
-            break;
-        case camera::PixelFormat::YUV:
-            cv::cvtColor(image, image, cv::COLOR_RGB2YUV);
-            break;
-        default:
-            assert(false && "Unreachable code");
+        }
     }
+
+    if (pixel_type_ == PixelType::Unknown) {
+        spdlog::critical("Failed to set pixel format: format unsupported.");
+        return false;
+    }
+
+    CALL_AND_CHECK(MV_CC_SetPixelFormat, "set pixel format", handle_,
+                   static_cast<unsigned int>(pixel_type_));
     return true;
 }
 
@@ -367,6 +369,232 @@ void HikCamera::startDaemonThread() {
     spdlog::info("HikCamera {} daemon thread starts, id: {:#x}", camera_sn_,
                  std::hash<std::thread::id>{}(daemon_thread.get_id()));
     daemon_thread.detach();
+}
+
+void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
+    switch (pixel_type_) {
+        case PixelType::RGB8Packed:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2GRAY);
+                    break;
+                case PixelFormat::RGB:
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2RGBA);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2BGRA);
+                    break;
+                case PixelFormat::HSV:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2HSV);
+                    break;
+                case PixelFormat::YUV:
+                    cv::cvtColor(image, image, cv::COLOR_RGB2YUV);
+                    break;
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::BayerBG8:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2GRAY);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2RGB);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGRA);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2RGBA);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::BayerGB8:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2GRAY);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2RGB);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGRA);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2RGBA);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::BayerGR8:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2GRAY);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2RGB);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGRA);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2RGBA);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::BayerRG8:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2GRAY);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2RGB);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGRA);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2RGBA);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::YUV422_8:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_YUYV);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2RGB_YUYV);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGRA_YUYV);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2RGBA_YUYV);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        case PixelType::YUV422_8_UYVY:
+            switch (format) {
+                case PixelFormat::GRAY:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_UYVY);
+                    break;
+                case PixelFormat::BGR:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
+                    break;
+                case PixelFormat::RGB:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2RGB_UYVY);
+                    break;
+                case PixelFormat::BGRA:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGRA_UYVY);
+                    break;
+                case PixelFormat::RGBA:
+                    cv::cvtColor(image, image, cv::COLOR_YUV2RGBA_UYVY);
+                    break;
+                case PixelFormat::HSV: {
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    break;
+                }
+                case PixelFormat::YUV: {
+                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
+                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    break;
+                }
+                default:
+                    assert(0 && "unreachable code");
+            }
+            break;
+
+        default:
+            assert(0 && "unreachable code");
+    }
 }
 
 }  // namespace radar::camera

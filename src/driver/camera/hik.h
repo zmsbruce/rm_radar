@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <shared_mutex>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 
@@ -52,7 +53,8 @@ class HikCamera : public ColorCamera {
     enum class GainAuto { Off = 0, Once = 1, Continuous = 2 };
     enum class BalanceRatioSelector { Red = 0, Green = 1, Blue = 2 };
     enum class TriggerMode { Off = 0, On = 1 };
-    enum class PixelFormat {
+    enum class PixelType {
+        Unknown = 0x0,
         RGB8Packed = 0x02180014,
         YUV422_8 = 0x02100032,
         YUV422_8_UYVY = 0x0210001F,
@@ -63,6 +65,8 @@ class HikCamera : public ColorCamera {
     };
 
     static void exceptionHandler(unsigned int msg_type, void* user);
+    bool setPixelType(std::span<unsigned int> supported_types);
+    void convertPixelFormat(cv::Mat& image, PixelFormat format);
     void startDaemonThread();
     bool setResolutionInner();
     bool setBalanceRatioInner();
@@ -83,6 +87,7 @@ class HikCamera : public ColorCamera {
     std::atomic_bool exception_flag_ = false;
     MV_FRAME_OUT* frame_out_ = nullptr;
     MV_CC_DEVICE_INFO* device_info_ = nullptr;
+    PixelType pixel_type_ = PixelType::Unknown;
     mutable std::shared_mutex mutex_;
 };
 

@@ -2,22 +2,25 @@
 
 #include <spdlog/spdlog.h>
 
+#include <span>
 #include <thread>
 
-#define CALL_AND_CHECK(func, msg, ...)                                     \
-    do {                                                                   \
-        int ret = func(__VA_ARGS__);                                       \
-        if (MV_OK != ret) {                                                \
-            spdlog::critical("Failed to {}, error code: {:#x}", msg, ret); \
-            return false;                                                  \
-        }                                                                  \
+#define CALL_AND_CHECK(func, msg, ...)                               \
+    do {                                                             \
+        int ret = func(__VA_ARGS__);                                 \
+        if (MV_OK != ret) {                                          \
+            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
+                             static_cast<unsigned int>(ret));        \
+            return false;                                            \
+        }                                                            \
     } while (0)
 
 namespace radar::camera {
 
-HikCamera::HikCamera(const std::string& camera_sn, unsigned int width,
+HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
                      unsigned int height, float exposure, float gamma,
-                     float gain, int grab_timeout, bool auto_white_balance,
+                     float gain, unsigned int grab_timeout,
+                     bool auto_white_balance,
                      std::array<unsigned int, 3>&& balance_ratio)
     : camera_sn_{camera_sn},
       width_{width},
@@ -66,6 +69,16 @@ bool HikCamera::open() {
     CALL_AND_CHECK(MV_CC_CreateHandle, "create handle", &handle_,
                    *device_info_ptr);
 
+    CALL_AND_CHECK(MV_CC_OpenDevice, "open device", handle_);
+
+    MVCC_ENUMVALUE val;
+    CALL_AND_CHECK(MV_CC_GetPixelFormat, "get pixel format", handle_, &val);
+    auto supported_pixel_format =
+        std::span(val.nSupportValue, val.nSupportedNum);
+    spdlog::info("Supported pixel format: [{:#x}]",
+                 fmt::join(supported_pixel_format, ", "));
+
+    // todo: add condition that RGB8Packed is not supported
     CALL_AND_CHECK(MV_CC_SetPixelFormat, "set pixel format", handle_,
                    static_cast<unsigned int>(PixelFormat::RGB8Packed));
 
@@ -111,6 +124,7 @@ bool HikCamera::startCapture() {
 
     CALL_AND_CHECK(MV_CC_StartGrabbing, "start grabbing", handle_);
     is_capturing_ = true;
+    return true;
 }
 
 bool HikCamera::stopCapture() {
@@ -118,6 +132,7 @@ bool HikCamera::stopCapture() {
 
     CALL_AND_CHECK(MV_CC_StopGrabbing, "stop grabbing", handle_);
     is_capturing_ = false;
+    return true;
 }
 
 bool HikCamera::grabImage(cv::Mat& image,
@@ -126,12 +141,13 @@ bool HikCamera::grabImage(cv::Mat& image,
         return false;
     }
 
-    {
-        std::unique_lock lock(mutex_);
-        std::memset(&frame_out_, 0, sizeof(MV_FRAME_OUT));
-        CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
-                       frame_out_, grab_timeout_);
-    }
+    std::unique_lock lock(mutex_);
+    std::memset(frame_out_, 0, sizeof(MV_FRAME_OUT));
+    CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
+                   frame_out_, grab_timeout_);
+    image =
+        cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
+                CV_8UC3, frame_out_->pBufAddr);
 
     switch (pixel_format) {
         case camera::PixelFormat::GRAY:
@@ -234,9 +250,6 @@ bool HikCamera::setResolutionInner() {
 
 bool HikCamera::setBalanceRatioInner() {
     if (auto_white_balance_) {
-        CALL_AND_CHECK(MV_CC_SetEnumValue, "set balance ratio selector",
-                       handle_, "BalanceRatioSelector",
-                       static_cast<unsigned int>(BalanceRatioSelector::Green));
         CALL_AND_CHECK(MV_CC_SetBalanceWhiteAuto, "set balance white auto",
                        handle_,
                        static_cast<unsigned int>(BalanceWhiteAuto::Continuous));
@@ -268,11 +281,13 @@ bool HikCamera::setExposureInner() {
 }
 
 bool HikCamera::setGammaInner() {
-    CALL_AND_CHECK(MV_CC_SetBoolValue, "set gamma enable", handle_,
-                   "GammaEnable", true);
-    CALL_AND_CHECK(MV_CC_SetGammaSelector, "set gamma selector", handle_,
-                   static_cast<unsigned int>(GammaSelector::User));
-    CALL_AND_CHECK(MV_CC_SetGamma, "set gamma", handle_, gamma_);
+    if (gamma_ > 0.0f) {
+        CALL_AND_CHECK(MV_CC_SetBoolValue, "set gamma enable", handle_,
+                       "GammaEnable", true);
+        CALL_AND_CHECK(MV_CC_SetGammaSelector, "set gamma selector", handle_,
+                       static_cast<unsigned int>(GammaSelector::User));
+        CALL_AND_CHECK(MV_CC_SetGamma, "set gamma", handle_, gamma_);
+    }
     return true;
 }
 
@@ -285,6 +300,7 @@ bool HikCamera::setGainInner() {
         CALL_AND_CHECK(MV_CC_SetGainMode, "set gain auto", handle_,
                        static_cast<unsigned int>(GainAuto::Continuous));
     }
+    return true;
 }
 
 bool HikCamera::isOpen() const {

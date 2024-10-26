@@ -7,6 +7,7 @@
 #include <atomic>
 #include <shared_mutex>
 #include <stdexcept>
+#include <string_view>
 
 #include "driver/camera/base.h"
 
@@ -15,9 +16,9 @@ namespace radar::camera {
 class HikCamera : public ColorCamera {
    public:
     HikCamera() = delete;
-    HikCamera(const std::string& camera_sn, unsigned int width,
+    HikCamera(std::string_view camera_sn, unsigned int width,
               unsigned int height, float exposure, float gamma, float gain,
-              int grab_timeout = 1000, bool auto_white_balance = true,
+              unsigned int grab_timeout = 1000, bool auto_white_balance = true,
               std::array<unsigned int, 3>&& balance_ratio = {0, 0, 0});
     ~HikCamera() override;
     bool open() override;
@@ -51,22 +52,14 @@ class HikCamera : public ColorCamera {
     enum class GainAuto { Off = 0, Once = 1, Continuous = 2 };
     enum class BalanceRatioSelector { Red = 0, Green = 1, Blue = 2 };
     enum class TriggerMode { Off = 0, On = 1 };
-    enum class PixelFormat : int {
-        Mono10 = 0x01100003,
-        Mono10Packed = 0x010C0004,
-        Mono12 = 0x01100005,
-        Mono12Packed = 0x010C0006,
-        Mono16 = 0x01100007,
+    enum class PixelFormat {
         RGB8Packed = 0x02180014,
         YUV422_8 = 0x02100032,
         YUV422_8_UYVY = 0x0210001F,
         BayerGR8 = 0x01080008,
         BayerRG8 = 0x01080009,
         BayerGB8 = 0x0108000A,
-        BayerBG8 = 0x0108000B,
-        BayerGB10 = 0x0110000e,
-        BayerGB12 = 0x01100012,
-        BayerGB12Packed = 0x010C002C,
+        BayerBG8 = 0x0108000B
     };
 
     static void exceptionHandler(unsigned int msg_type, void* user);
@@ -83,7 +76,7 @@ class HikCamera : public ColorCamera {
     float exposure_;
     float gamma_;
     float gain_;
-    int grab_timeout_;
+    unsigned int grab_timeout_;
     bool auto_white_balance_;
     std::array<unsigned int, 3> balance_ratio_;
     void* handle_ = nullptr;

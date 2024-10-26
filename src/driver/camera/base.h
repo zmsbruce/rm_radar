@@ -41,14 +41,6 @@ class Camera {
     bool is_capturing_ = false;
 };
 
-class MonoCamera : public Camera {
-   public:
-    virtual bool setBalanceRatioAuto(bool balance_auto) = 0;
-    virtual bool getBalanceRatioAuto() const = 0;
-    virtual int getBalanceRatio() const = 0;
-    virtual bool setBalanceRatio(int balance) = 0;
-};
-
 class ColorCamera : public Camera {
    public:
     virtual bool setBalanceRatioAuto(bool balance_auto) = 0;

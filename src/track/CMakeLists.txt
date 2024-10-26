@@ -14,4 +14,5 @@ target_include_directories(tracker PUBLIC
 target_link_libraries(tracker PUBLIC
     ${OpenCV_LIBS}
     Eigen3::Eigen
+    spdlog::spdlog
 )

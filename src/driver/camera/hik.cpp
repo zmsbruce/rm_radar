@@ -33,29 +33,75 @@ HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
       balance_ratio_{balance_ratio},
       frame_out_{std::make_unique<MV_FRAME_OUT>()},
       device_info_{std::make_unique<MV_CC_DEVICE_INFO>()} {
+    spdlog::trace("Initializing HikCamera with SN: {}", camera_sn);
+    spdlog::debug(
+        "Camera parameters: width={}, height={}, exposure={}, gamma={}, "
+        "gain={}, grab timeout: {}, auto white balance: {}, balance ratio: "
+        "[{}, {}, {}]",
+        width, height, exposure, gamma, gain, grab_timeout, auto_white_balance,
+        balance_ratio[0], balance_ratio[1], balance_ratio[2]);
+
+    // Initializing device info
     std::memset(device_info_.get(), 0, sizeof(MV_CC_DEVICE_INFO));
+    spdlog::trace("Device info structure initialized.");
+
+    // Starting daemon thread
+    spdlog::trace("Starting daemon thread.");
     startDaemonThread();
+
+    // Attempt to open the camera
+    spdlog::trace("Attempting to open camera with SN: {}", camera_sn);
     if (!open()) {
-        throw std::runtime_error(
-            fmt::format("Failed to open HikCamera {}", camera_sn));
+        auto error_info =
+            fmt::format("Failed to open camera with SN: {}", camera_sn);
+        spdlog::error("{}", error_info);
+        throw std::runtime_error(error_info);
+    }
+
+    // Attempt to start capturing
+    spdlog::trace("Attempting to start capturing with camera: {}", camera_sn);
+    if (!startCapture()) {
+        auto error_info =
+            fmt::format("Failed to start capturing with camera: {}", camera_sn);
+        spdlog::error("{}", error_info);
+        throw std::runtime_error(error_info);
     }
 }
 
 HikCamera::~HikCamera() {
-    spdlog::info("Destroying HikCamera with serial number: {}", camera_sn_);
+    spdlog::info("Destroying camera with serial number: {}", camera_sn_);
+
+    // Check if the camera is open before attempting to close it
+    spdlog::trace("Checking if camera with SN: {} is open.", camera_sn_);
     if (isOpen()) {
-        close();
+        spdlog::debug("Camera with SN: {} is open. Attempting to close it.",
+                      camera_sn_);
+        if (!close()) {
+            spdlog::error("Camera with SN: {} failed to close.", camera_sn_);
+        } else {
+            spdlog::info("Camera with SN: {} successfully closed.", camera_sn_);
+        }
     }
+
+    spdlog::trace("Requesting daemon thread stop for camera with SN: {}.",
+                  camera_sn_);
     daemon_thread_.request_stop();
 }
 
 bool HikCamera::open() {
-    spdlog::info("Opening HikCamera with serial number: {}", camera_sn_);
+    spdlog::info("Opening camera with serial number: {}", camera_sn_);
 
+    // Acquire lock for thread-safety when opening the camera
     std::unique_lock lock(mutex_);
     spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
 
+    // Retrieve available device information
+    spdlog::trace("Retrieving device information list.");
     auto device_info_list = HikCamera::getDeviceInfoList();
+    spdlog::debug("Found {} devices.", device_info_list.size());
+
+    // Search for the device in the list using the serial number
+    spdlog::trace("Searching for device with serial number: {}.", camera_sn_);
     auto device_info_iter = std::ranges::find_if(
         device_info_list, [this](MV_CC_DEVICE_INFO* device_info) {
             return reinterpret_cast<const char*>(
@@ -63,140 +109,309 @@ bool HikCamera::open() {
                    camera_sn_;
         });
 
+    // Check if the device was found
     if (device_info_iter == device_info_list.end()) {
-        spdlog::critical("No devices found for {}", camera_sn_);
+        spdlog::critical("No devices found for serial number: {}", camera_sn_);
         return false;
     }
+    spdlog::info("Device with serial number {} found.", camera_sn_);
 
+    // Create a handle for the camera device
+    spdlog::trace("Creating handle for the camera.");
     CALL_AND_CHECK(MV_CC_CreateHandle, "create handle", &handle_,
                    *device_info_iter);
+    spdlog::debug("Handle created successfully for camera {}.", camera_sn_);
 
+    // Open the camera device
+    spdlog::trace("Opening device for camera {}.", camera_sn_);
     CALL_AND_CHECK(MV_CC_OpenDevice, "open device", handle_);
+    spdlog::info("Device for camera {} opened successfully.", camera_sn_);
 
+    // Retrieve supported pixel formats
     MVCC_ENUMVALUE val;
+    spdlog::trace("Getting supported pixel formats for camera {}.", camera_sn_);
     CALL_AND_CHECK(MV_CC_GetPixelFormat, "get pixel format", handle_, &val);
     auto supported_pixel_format =
         std::span(val.nSupportValue, val.nSupportedNum);
-    spdlog::debug("Supported pixel format: [{:#x}]",
+    spdlog::debug("Supported pixel format for camera {}: [{:#x}]", camera_sn_,
                   fmt::join(supported_pixel_format, ", "));
 
+    // Set the pixel type based on supported formats
+    spdlog::trace("Setting pixel type for camera {}.", camera_sn_);
     setPixelType(supported_pixel_format);
+    spdlog::debug("Pixel type set successfully for camera {}.", camera_sn_);
 
-    if (!setResolutionInner() || !setBalanceRatioInner() ||
-        !setExposureInner() || !setGammaInner() || !setGainInner()) {
+    // Setting camera configurations: resolution, balance ratio, exposure,
+    // gamma, gain Each function call logs success/failure internally
+    spdlog::trace(
+        "Setting camera configuration (resolution, balance ratio, exposure, "
+        "gamma, gain) for camera {}.",
+        camera_sn_);
+    if (!setResolutionInner()) {
+        spdlog::error("Failed to set resolution for camera {}.", camera_sn_);
         return false;
     }
+    spdlog::debug("Resolution set successfully for camera {}.", camera_sn_);
 
+    if (!setBalanceRatioInner()) {
+        spdlog::error("Failed to set balance ratio for camera {}.", camera_sn_);
+        return false;
+    }
+    spdlog::debug("Balance ratio set successfully for camera {}.", camera_sn_);
+
+    if (!setExposureInner()) {
+        spdlog::error("Failed to set exposure for camera {}.", camera_sn_);
+        return false;
+    }
+    spdlog::debug("Exposure set successfully for camera {}.", camera_sn_);
+
+    if (!setGammaInner()) {
+        spdlog::error("Failed to set gamma for camera {}.", camera_sn_);
+        return false;
+    }
+    spdlog::debug("Gamma set successfully for camera {}.", camera_sn_);
+
+    if (!setGainInner()) {
+        spdlog::error("Failed to set gain for camera {}.", camera_sn_);
+        return false;
+    }
+    spdlog::debug("Gain set successfully for camera {}.", camera_sn_);
+
+    // Register an exception callback to handle any errors during runtime
+    spdlog::trace("Registering exception callback for camera {}.", camera_sn_);
     CALL_AND_CHECK(MV_CC_RegisterExceptionCallBack,
                    "register exception callback", handle_,
                    HikCamera::exceptionHandler, this);
+    spdlog::info("Exception callback registered successfully for camera {}.",
+                 camera_sn_);
 
+    // Mark the camera as open
     is_open_ = true;
-    spdlog::info("HikCamera {} opened successfully.", camera_sn_);
+    spdlog::info("Camera {} opened successfully.", camera_sn_);
     return true;
 }
 
 bool HikCamera::close() {
-    spdlog::info("Closing HikCamera with serial number: {}", camera_sn_);
+    spdlog::info("Closing camera with serial number: {}", camera_sn_);
+
+    // Check if the camera is currently capturing images
+    spdlog::trace("Checking if camera {} is capturing.", camera_sn_);
     if (isCapturing()) {
+        spdlog::debug("Camera {} is capturing, attempting to stop capture.",
+                      camera_sn_);
         stopCapture();
+        spdlog::info("Capture stopped successfully for camera {}.", camera_sn_);
     }
 
+    // Acquire lock before modifying camera state
+    spdlog::trace("Acquiring lock to close camera {}.", camera_sn_);
     {
         std::unique_lock lock(mutex_);
+        spdlog::debug("Lock acquired for closing camera {}.", camera_sn_);
+
+        // Close the camera device
+        spdlog::trace("Closing device for camera {}.", camera_sn_);
         CALL_AND_CHECK(MV_CC_CloseDevice, "close device", handle_);
+        spdlog::info("Device closed successfully for camera {}.", camera_sn_);
+
+        // Destroy the camera handle
+        spdlog::trace("Destroying handle for camera {}.", camera_sn_);
         CALL_AND_CHECK(MV_CC_DestroyHandle, "destroy handle", handle_);
+        spdlog::info("Handle destroyed successfully for camera {}.",
+                     camera_sn_);
+
+        // Reset handle and mark as closed
         handle_ = nullptr;
         is_open_ = false;
+        spdlog::debug("Camera {} handle reset and marked as closed.",
+                      camera_sn_);
     }
-    spdlog::info("HikCamera {} closed successfully.", camera_sn_);
+
+    spdlog::info("Camera {} closed successfully.", camera_sn_);
     return true;
 }
 
 bool HikCamera::reconnect() {
-    spdlog::warn("Reconnecting HikCamera with serial number: {}", camera_sn_);
-    close();
-    return open();
+    spdlog::warn("Reconnecting camera with serial number: {}", camera_sn_);
+
+    // Attempt to close the camera
+    spdlog::trace("Closing camera {} before attempting reconnection.",
+                  camera_sn_);
+    if (!close()) {
+        spdlog::error("Failed to close camera {} during reconnection.",
+                      camera_sn_);
+    } else {
+        spdlog::info("Camera {} closed successfully.", camera_sn_);
+    }
+
+    // Attempt to reopen the camera
+    spdlog::trace("Reopening camera {} during reconnection.", camera_sn_);
+    if (!open()) {
+        spdlog::error("Failed to open camera {} during reconnection.",
+                      camera_sn_);
+        return false;
+    } else {
+        spdlog::info("Camera {} reconnected successfully.", camera_sn_);
+        return true;
+    }
 }
 
 bool HikCamera::startCapture() {
-    spdlog::trace("Starting capture on HikCamera with serial number: {}",
-                  camera_sn_);
+    spdlog::trace(
+        "Attempting to start capture on camera with serial number: {}",
+        camera_sn_);
+
+    // Acquire lock to ensure thread safety while starting the capture process
+    spdlog::trace("Acquiring lock to start capture on camera {}.", camera_sn_);
     {
         std::unique_lock lock(mutex_);
+        spdlog::debug("Lock acquired for starting capture on camera {}.",
+                      camera_sn_);
+
+        // Call the SDK's function to start grabbing frames
+        spdlog::trace("Calling MV_CC_StartGrabbing for camera {}.", camera_sn_);
         CALL_AND_CHECK(MV_CC_StartGrabbing, "start grabbing", handle_);
+        spdlog::debug("MV_CC_StartGrabbing called successfully for camera {}.",
+                      camera_sn_);
+
+        // Mark the camera status as capturing
         is_capturing_ = true;
+        spdlog::debug("Camera {} marked as capturing.", camera_sn_);
     }
-    spdlog::info("Capture started on HikCamera {}.", camera_sn_);
+
+    spdlog::info("Capture started successfully on camera {}.", camera_sn_);
     return true;
 }
 
 bool HikCamera::stopCapture() {
-    spdlog::trace("Stopping capture on HikCamera with serial number: {}",
+    spdlog::trace("Attempting to stop capture on camera with serial number: {}",
                   camera_sn_);
+
+    // Acquire lock to ensure thread safety while stopping the capture process
+    spdlog::trace("Acquiring lock to stop capture on camera {}.", camera_sn_);
     {
         std::unique_lock lock(mutex_);
+        spdlog::debug("Lock acquired for stopping capture on camera {}.",
+                      camera_sn_);
 
+        // Call the SDK's function to stop grabbing frames
+        spdlog::trace("Calling MV_CC_StopGrabbing for camera {}.", camera_sn_);
         CALL_AND_CHECK(MV_CC_StopGrabbing, "stop grabbing", handle_);
+        spdlog::debug("MV_CC_StopGrabbing called successfully for camera {}.",
+                      camera_sn_);
+
+        // Update the camera's capturing status
         is_capturing_ = false;
+        spdlog::debug("Camera {} marked as not capturing.", camera_sn_);
     }
-    spdlog::info("Capture stopped on HikCamera {}.", camera_sn_);
+
+    spdlog::info("Capture stopped successfully on camera {}.", camera_sn_);
     return true;
 }
 
 bool HikCamera::grabImage(cv::Mat& image,
                           camera::PixelFormat pixel_format) noexcept {
-    spdlog::debug("Grabbing image from HikCamera with serial number: {}",
+    spdlog::debug("Attempting to grab image from camera with serial number: {}",
                   camera_sn_);
+
+    // Check if the camera is open and capturing
     if (!isOpen() || !isCapturing()) {
-        spdlog::error("HikCamera {} is not open or capturing.", camera_sn_);
+        spdlog::error("Camera {} is not open or capturing.", camera_sn_);
         return false;
     }
 
+    // Acquire lock to ensure thread-safe access to camera resources
+    spdlog::trace("Acquiring lock to grab image from camera {}.", camera_sn_);
     {
         std::unique_lock lock(mutex_);
+        spdlog::debug("Lock acquired for grabbing image from camera {}.",
+                      camera_sn_);
+
+        // Clear the frame output buffer before grabbing a new image
+        spdlog::trace("Clearing frame output buffer for camera {}.",
+                      camera_sn_);
         std::memset(frame_out_.get(), 0, sizeof(MV_FRAME_OUT));
+
+        // Attempt to get the image buffer from the camera
+        spdlog::trace("Calling MV_CC_GetImageBuffer for camera {}.",
+                      camera_sn_);
         CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
                        frame_out_.get(), grab_timeout_);
+        spdlog::debug("Image buffer retrieved successfully for camera {}.",
+                      camera_sn_);
     }
 
+    // Convert the buffer to a cv::Mat object
+    spdlog::trace("Converting frame buffer to cv::Mat for camera {}.",
+                  camera_sn_);
     image =
         cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
                 CV_8UC3, frame_out_->pBufAddr);
+
+    // Check if the image is valid (not empty)
     if (image.empty()) {
-        spdlog::error("Failed to grab image: image is empty.");
+        spdlog::error("Failed to grab image from camera {}: image is empty.",
+                      camera_sn_);
         return false;
     }
+    spdlog::debug("Image successfully converted to cv::Mat for camera {}.",
+                  camera_sn_);
 
+    // Convert the pixel format as needed
+    spdlog::trace("Converting pixel format for camera {}.", camera_sn_);
     convertPixelFormat(image, pixel_format);
+    spdlog::debug("Pixel format conversion completed for camera {}.",
+                  camera_sn_);
 
-    spdlog::trace("Image grabbed successfully from HikCamera {}.", camera_sn_);
+    spdlog::trace("Image grabbed successfully from camera {}.", camera_sn_);
     return true;
 }
 
 bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
+    spdlog::debug("Attempting to set pixel format for camera {}.", camera_sn_);
+
     const std::vector<PixelType> candidate_types{
         PixelType::RGB8Packed,    PixelType::BayerBG8, PixelType::BayerGB8,
         PixelType::BayerGR8,      PixelType::BayerRG8, PixelType::YUV422_8,
         PixelType::YUV422_8_UYVY,
     };
-    const std::unordered_set<unsigned int> supported_types_set(
-        supported_types.begin(), supported_types.end());
 
+    spdlog::trace("Supported pixel formats for camera {}: [{}]", camera_sn_,
+                  fmt::join(supported_types, ", "));
+
+    // Iterate over candidate types and check if any are supported
     for (PixelType type : candidate_types) {
-        if (supported_types_set.contains(static_cast<unsigned int>(type))) {
+        spdlog::trace("Checking if pixel format {} is supported.",
+                      static_cast<unsigned int>(type));
+
+        if (std::ranges::any_of(
+                supported_types, [type](unsigned int supported_type) {
+                    return static_cast<unsigned int>(type) == supported_type;
+                })) {
             pixel_type_ = type;
+            spdlog::debug("Pixel format {} selected for camera {}.",
+                          static_cast<unsigned int>(pixel_type_), camera_sn_);
             break;
         }
     }
 
+    // If no supported pixel type was found, log a critical error
     if (pixel_type_ == PixelType::Unknown) {
-        spdlog::critical("Failed to set pixel format: format unsupported.");
+        spdlog::critical(
+            "Failed to set pixel format for camera {}: no supported format "
+            "found.",
+            camera_sn_);
         return false;
     }
 
+    // Set the pixel format using the selected pixel type
+    spdlog::trace("Setting pixel format to {} for camera {}.",
+                  static_cast<unsigned int>(pixel_type_), camera_sn_);
     CALL_AND_CHECK(MV_CC_SetPixelFormat, "set pixel format", handle_,
                    static_cast<unsigned int>(pixel_type_));
+
+    spdlog::info("Pixel format set successfully to {} for camera {}.",
+                 static_cast<unsigned int>(pixel_type_), camera_sn_);
     return true;
 }
 

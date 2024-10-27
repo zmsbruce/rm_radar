@@ -24,7 +24,7 @@ class HikCamera : public ColorCamera {
               std::array<unsigned int, 3>&& balance_ratio = {0, 0, 0});
     ~HikCamera() override;
     bool open() override;
-    void close() override;
+    bool close() override;
     bool reconnect() override;
     bool startCapture() override;
     bool stopCapture() override;

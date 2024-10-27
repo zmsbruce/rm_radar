@@ -96,27 +96,21 @@ bool HikCamera::open() {
     return true;
 }
 
-void HikCamera::close() {
+bool HikCamera::close() {
     spdlog::info("Closing HikCamera with serial number: {}", camera_sn_);
     if (isCapturing()) {
         stopCapture();
     }
 
-    std::unique_lock lock(mutex_);
-
-    int ret;
-    ret = MV_CC_CloseDevice(handle_);
-    if (ret != MV_OK) {
-        spdlog::error("Failed to close device, error code: {:#x}", ret);
+    {
+        std::unique_lock lock(mutex_);
+        CALL_AND_CHECK(MV_CC_CloseDevice, "close device", handle_);
+        CALL_AND_CHECK(MV_CC_DestroyHandle, "destroy handle", handle_);
+        handle_ = nullptr;
+        is_open_ = false;
     }
-    ret = MV_CC_DestroyHandle(handle_);
-    if (ret != MV_OK) {
-        spdlog::error("Failed to destroy handle, error code: {:#x}", ret);
-    }
-
-    handle_ = nullptr;
-    is_open_ = false;
     spdlog::info("HikCamera {} closed successfully.", camera_sn_);
+    return true;
 }
 
 bool HikCamera::reconnect() {

@@ -54,7 +54,7 @@ class HikCamera : public ColorCamera {
               std::array<unsigned int, 3>&& balance_ratio = {0, 0, 0});
     ~HikCamera() override;
     bool open() override;
-    bool close() override;
+    void close() override;
     bool reconnect() override;
     bool startCapture() override;
     bool stopCapture() override;
@@ -71,11 +71,11 @@ class HikCamera : public ColorCamera {
     bool setBalanceRatioAuto(bool balance_auto) override;
     bool getBalanceRatioAuto() const override;
     std::string getCameraInfo() const override;
+    bool isOpen() const override;
+    bool isCapturing() const override;
     std::string getCameraSn() const;
     void setExceptionFlag(bool flag);
     bool getExceptionFlag() const;
-    bool isOpen() const override;
-    bool isCapturing() const override;
 
    private:
     /**

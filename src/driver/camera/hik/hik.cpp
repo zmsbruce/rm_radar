@@ -17,27 +17,32 @@
 #include <stdexcept>
 #include <vector>
 
-/**
- * @brief Helper macro to call a function and check its return value.
- *
- * This macro streamlines the process of calling a function and checking
- * its return value. If the function call does not return `MV_OK`, the macro
- * logs a critical error message using `spdlog` and returns `false` from the
- * enclosing function.
- *
- * @param func The function to call. This function should return an integer
- * status code.
- * @param msg A descriptive message indicating the operation being performed.
- * This message will be included in the error log if the function fails.
- * @param ... Variadic arguments that are passed to the function `func`.
- */
-#define CALL_AND_CHECK(func, msg, ...)                               \
+#define HIK_CHECK_RETURN_BOOL(func, msg, ...)                        \
     do {                                                             \
         int ret = func(__VA_ARGS__);                                 \
         if (MV_OK != ret) {                                          \
             spdlog::critical("Failed to {}, error code: {:#x}", msg, \
                              static_cast<unsigned int>(ret));        \
             return false;                                            \
+        }                                                            \
+    } while (0)
+
+#define HIK_CHECK_RETURN_VOID(func, msg, ...)                        \
+    do {                                                             \
+        int ret = func(__VA_ARGS__);                                 \
+        if (MV_OK != ret) {                                          \
+            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
+                             static_cast<unsigned int>(ret));        \
+            return;                                                  \
+        }                                                            \
+    } while (0)
+
+#define HIK_CHECK_NORETURN(func, msg, ...)                           \
+    do {                                                             \
+        int ret = func(__VA_ARGS__);                                 \
+        if (MV_OK != ret) {                                          \
+            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
+                             static_cast<unsigned int>(ret));        \
         }                                                            \
     } while (0)
 
@@ -117,11 +122,7 @@ HikCamera::~HikCamera() {
     if (isOpen()) {
         spdlog::debug("Camera with SN: {} is open. Attempting to close it.",
                       camera_sn_);
-        if (!close()) {
-            spdlog::error("Camera with SN: {} failed to close.", camera_sn_);
-        } else {
-            spdlog::info("Camera with SN: {} successfully closed.", camera_sn_);
-        }
+        close();
     }
 
     spdlog::trace("Requesting daemon thread stop for camera with SN: {}.",
@@ -134,16 +135,21 @@ HikCamera::~HikCamera() {
  * @return True if the camera was opened successfully, false otherwise.
  */
 bool HikCamera::open() {
-    spdlog::info("Opening camera with serial number: {}", camera_sn_);
+    if (!handle_) {
+        spdlog::warn("Camera handle is not null, will try closing.");
+        close();
+    }
 
-    // Acquire lock for thread-safety when opening the camera
-    std::unique_lock lock(mutex_);
-    spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
+    spdlog::info("Opening camera with serial number: {}", camera_sn_);
 
     // Retrieve available device information
     spdlog::trace("Retrieving device information list.");
     auto device_info_list = HikCamera::getDeviceInfoList();
     spdlog::debug("Found {} devices.", device_info_list.size());
+
+    // Acquire lock for thread-safety when opening the camera
+    std::unique_lock lock(mutex_);
+    spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
 
     // Search for the device in the list using the serial number
     spdlog::trace("Searching for device with serial number: {}.", camera_sn_);
@@ -163,19 +169,20 @@ bool HikCamera::open() {
 
     // Create a handle for the camera device
     spdlog::trace("Creating handle for the camera.");
-    CALL_AND_CHECK(MV_CC_CreateHandle, "create handle", &handle_,
-                   *device_info_iter);
+    HIK_CHECK_RETURN_BOOL(MV_CC_CreateHandle, "create handle", &handle_,
+                          *device_info_iter);
     spdlog::debug("Handle created successfully for camera {}.", camera_sn_);
 
     // Open the camera device
     spdlog::trace("Opening device for camera {}.", camera_sn_);
-    CALL_AND_CHECK(MV_CC_OpenDevice, "open device", handle_);
+    HIK_CHECK_RETURN_BOOL(MV_CC_OpenDevice, "open device", handle_);
     spdlog::info("Device for camera {} opened successfully.", camera_sn_);
 
     // Retrieve supported pixel formats
     MVCC_ENUMVALUE val;
     spdlog::trace("Getting supported pixel formats for camera {}.", camera_sn_);
-    CALL_AND_CHECK(MV_CC_GetPixelFormat, "get pixel format", handle_, &val);
+    HIK_CHECK_RETURN_BOOL(MV_CC_GetPixelFormat, "get pixel format", handle_,
+                          &val);
     auto supported_pixel_format =
         std::span(val.nSupportValue, val.nSupportedNum);
     spdlog::debug("Supported pixel format for camera {}: [{:#x}]", camera_sn_,
@@ -224,9 +231,9 @@ bool HikCamera::open() {
 
     // Register an exception callback to handle any errors during runtime
     spdlog::trace("Registering exception callback for camera {}.", camera_sn_);
-    CALL_AND_CHECK(MV_CC_RegisterExceptionCallBack,
-                   "register exception callback", handle_,
-                   HikCamera::exceptionHandler, this);
+    HIK_CHECK_RETURN_BOOL(MV_CC_RegisterExceptionCallBack,
+                          "register exception callback", handle_,
+                          HikCamera::exceptionHandler, this);
     spdlog::info("Exception callback registered successfully for camera {}.",
                  camera_sn_);
 
@@ -240,7 +247,7 @@ bool HikCamera::open() {
  * @brief Closes the camera.
  * @return True if the camera was closed successfully, false otherwise.
  */
-bool HikCamera::close() {
+void HikCamera::close() {
     spdlog::info("Closing camera with serial number: {}", camera_sn_);
 
     // Check if the camera is currently capturing images
@@ -260,14 +267,11 @@ bool HikCamera::close() {
 
         // Close the camera device
         spdlog::trace("Closing device for camera {}.", camera_sn_);
-        CALL_AND_CHECK(MV_CC_CloseDevice, "close device", handle_);
-        spdlog::info("Device closed successfully for camera {}.", camera_sn_);
+        HIK_CHECK_NORETURN(MV_CC_CloseDevice, "close device", handle_);
 
         // Destroy the camera handle
         spdlog::trace("Destroying handle for camera {}.", camera_sn_);
-        CALL_AND_CHECK(MV_CC_DestroyHandle, "destroy handle", handle_);
-        spdlog::info("Handle destroyed successfully for camera {}.",
-                     camera_sn_);
+        HIK_CHECK_NORETURN(MV_CC_DestroyHandle, "destroy handle", handle_);
 
         // Reset handle and mark as closed
         handle_ = nullptr;
@@ -276,8 +280,7 @@ bool HikCamera::close() {
                       camera_sn_);
     }
 
-    spdlog::info("Camera {} closed successfully.", camera_sn_);
-    return true;
+    spdlog::info("Camera {} closed.", camera_sn_);
 }
 
 /**
@@ -290,12 +293,7 @@ bool HikCamera::reconnect() {
     // Attempt to close the camera
     spdlog::trace("Closing camera {} before attempting reconnection.",
                   camera_sn_);
-    if (!close()) {
-        spdlog::error("Failed to close camera {} during reconnection.",
-                      camera_sn_);
-    } else {
-        spdlog::info("Camera {} closed successfully.", camera_sn_);
-    }
+    close();
 
     // Attempt to reopen the camera
     spdlog::trace("Reopening camera {} during reconnection.", camera_sn_);
@@ -327,7 +325,7 @@ bool HikCamera::startCapture() {
 
         // Call the SDK's function to start grabbing frames
         spdlog::trace("Calling MV_CC_StartGrabbing for camera {}.", camera_sn_);
-        CALL_AND_CHECK(MV_CC_StartGrabbing, "start grabbing", handle_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_StartGrabbing, "start grabbing", handle_);
         spdlog::debug("MV_CC_StartGrabbing called successfully for camera {}.",
                       camera_sn_);
 
@@ -357,7 +355,7 @@ bool HikCamera::stopCapture() {
 
         // Call the SDK's function to stop grabbing frames
         spdlog::trace("Calling MV_CC_StopGrabbing for camera {}.", camera_sn_);
-        CALL_AND_CHECK(MV_CC_StopGrabbing, "stop grabbing", handle_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_StopGrabbing, "stop grabbing", handle_);
         spdlog::debug("MV_CC_StopGrabbing called successfully for camera {}.",
                       camera_sn_);
 
@@ -402,8 +400,8 @@ bool HikCamera::grabImage(cv::Mat& image,
         // Attempt to get the image buffer from the camera
         spdlog::trace("Calling MV_CC_GetImageBuffer for camera {}.",
                       camera_sn_);
-        CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
-                       frame_out_.get(), grab_timeout_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetImageBuffer, "get image buffer", handle_,
+                              frame_out_.get(), grab_timeout_);
         spdlog::debug("Image buffer retrieved successfully for camera {}.",
                       camera_sn_);
     }
@@ -479,8 +477,8 @@ bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
     // Set the pixel format using the selected pixel type
     spdlog::trace("Setting pixel format to {} for camera {}.",
                   static_cast<unsigned int>(pixel_type_), camera_sn_);
-    CALL_AND_CHECK(MV_CC_SetPixelFormat, "set pixel format", handle_,
-                   static_cast<unsigned int>(pixel_type_));
+    HIK_CHECK_RETURN_BOOL(MV_CC_SetPixelFormat, "set pixel format", handle_,
+                          static_cast<unsigned int>(pixel_type_));
 
     spdlog::info("Pixel format set successfully to {} for camera {}.",
                  static_cast<unsigned int>(pixel_type_), camera_sn_);
@@ -609,8 +607,8 @@ std::string HikCamera::getCameraSn() const {
  * @return True if the resolution was set successfully, false otherwise.
  */
 bool HikCamera::setResolutionInner() {
-    CALL_AND_CHECK(MV_CC_SetWidth, "set width", handle_, width_);
-    CALL_AND_CHECK(MV_CC_SetHeight, "set height", handle_, height_);
+    HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width_);
+    HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_, height_);
     return true;
 }
 
@@ -621,19 +619,21 @@ bool HikCamera::setResolutionInner() {
  */
 bool HikCamera::setBalanceRatioInner() {
     if (auto_white_balance_) {
-        CALL_AND_CHECK(MV_CC_SetBalanceWhiteAuto, "set balance white auto",
-                       handle_,
-                       static_cast<unsigned int>(BalanceWhiteAuto::Continuous));
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
+            static_cast<unsigned int>(BalanceWhiteAuto::Continuous));
     } else {
-        CALL_AND_CHECK(MV_CC_SetBalanceWhiteAuto, "set balance white auto",
-                       handle_,
-                       static_cast<unsigned int>(BalanceWhiteAuto::Off));
-        CALL_AND_CHECK(MV_CC_SetBalanceRatioRed, "set balance ratio red",
-                       handle_, balance_ratio_[0]);
-        CALL_AND_CHECK(MV_CC_SetBalanceRatioGreen, "set balance ratio green",
-                       handle_, balance_ratio_[1]);
-        CALL_AND_CHECK(MV_CC_SetBalanceRatioBlue, "set balance ratio blue",
-                       handle_, balance_ratio_[2]);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceWhiteAuto,
+                              "set balance white auto", handle_,
+                              static_cast<unsigned int>(BalanceWhiteAuto::Off));
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioRed, "set balance ratio red",
+                              handle_, balance_ratio_[0]);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioGreen,
+                              "set balance ratio green", handle_,
+                              balance_ratio_[1]);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioBlue,
+                              "set balance ratio blue", handle_,
+                              balance_ratio_[2]);
     }
     return true;
 }
@@ -644,13 +644,15 @@ bool HikCamera::setBalanceRatioInner() {
  */
 bool HikCamera::setExposureInner() {
     if (exposure_ > 0) {
-        CALL_AND_CHECK(MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
-                       static_cast<unsigned int>(ExposureAuto::Off));
-        CALL_AND_CHECK(MV_CC_SetExposureTime, "set exposure time", handle_,
-                       exposure_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureAutoMode, "set exposure auto",
+                              handle_,
+                              static_cast<unsigned int>(ExposureAuto::Off));
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureTime, "set exposure time",
+                              handle_, exposure_);
     } else {
-        CALL_AND_CHECK(MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
-                       static_cast<unsigned int>(ExposureAuto::Continuous));
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
+            static_cast<unsigned int>(ExposureAuto::Continuous));
     }
     return true;
 }
@@ -661,11 +663,12 @@ bool HikCamera::setExposureInner() {
  */
 bool HikCamera::setGammaInner() {
     if (gamma_ > 0.0f) {
-        CALL_AND_CHECK(MV_CC_SetBoolValue, "set gamma enable", handle_,
-                       "GammaEnable", true);
-        CALL_AND_CHECK(MV_CC_SetGammaSelector, "set gamma selector", handle_,
-                       static_cast<unsigned int>(GammaSelector::User));
-        CALL_AND_CHECK(MV_CC_SetGamma, "set gamma", handle_, gamma_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable", handle_,
+                              "GammaEnable", true);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetGammaSelector, "set gamma selector",
+                              handle_,
+                              static_cast<unsigned int>(GammaSelector::User));
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetGamma, "set gamma", handle_, gamma_);
     }
     return true;
 }
@@ -676,12 +679,12 @@ bool HikCamera::setGammaInner() {
  */
 bool HikCamera::setGainInner() {
     if (gain_ > 0) {
-        CALL_AND_CHECK(MV_CC_SetGainMode, "set gain auto", handle_,
-                       static_cast<unsigned int>(GainAuto::Off));
-        CALL_AND_CHECK(MV_CC_SetGain, "set gain", handle_, gain_);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
+                              static_cast<unsigned int>(GainAuto::Off));
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetGain, "set gain", handle_, gain_);
     } else {
-        CALL_AND_CHECK(MV_CC_SetGainMode, "set gain auto", handle_,
-                       static_cast<unsigned int>(GainAuto::Continuous));
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
+                              static_cast<unsigned int>(GainAuto::Continuous));
     }
     return true;
 }
@@ -793,11 +796,8 @@ std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
         std::memset(device_info_list_.get(), 0, sizeof(MV_CC_DEVICE_INFO_LIST));
         spdlog::trace("Initialized MV_CC_DEVICE_INFO_LIST structure");
 
-        int ret = MV_CC_EnumDevices(MV_USB_DEVICE, device_info_list_.get());
-        if (ret != MV_OK) {
-            spdlog::critical("Failed to enum devices, error code: {}", ret);
-        }
-
+        HIK_CHECK_NORETURN(MV_CC_EnumDevices, "enum devices", MV_USB_DEVICE,
+                           device_info_list_.get());
         spdlog::info("Enumerated devices, found {} devices.",
                      device_info_list_->nDeviceNum);
         for (unsigned int i = 0; i < device_info_list_->nDeviceNum; ++i) {

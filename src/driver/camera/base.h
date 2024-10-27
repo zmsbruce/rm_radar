@@ -57,9 +57,8 @@ class Camera {
 
     /**
      * @brief Closes the camera.
-     * @return True if the camera was successfully closed, false otherwise.
      */
-    virtual bool close() = 0;
+    virtual void close() = 0;
 
     /**
      * @brief Reconnects the camera, typically used when the connection is lost.

@@ -2,7 +2,7 @@ find_package(Hikvision REQUIRED)
 find_package(OpenCV REQUIRED)
 
 add_library(driver SHARED
-    camera/hik.cpp
+    camera/hik/hik.cpp
 )
 
 target_include_directories(driver PUBLIC

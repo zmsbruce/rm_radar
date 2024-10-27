@@ -1,10 +1,36 @@
+/**
+ * @file hik.cpp
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief This file defines the implementation of the HikCamera class which
+ * handles the interfacing with the Hikvision camera using the SDK.
+ * @date 2024-10-27
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #include "hik.h"
 
 #include <spdlog/spdlog.h>
 
-#include <unordered_set>
+#include <stdexcept>
 #include <vector>
 
+/**
+ * @brief Helper macro to call a function and check its return value.
+ *
+ * This macro streamlines the process of calling a function and checking
+ * its return value. If the function call does not return `MV_OK`, the macro
+ * logs a critical error message using `spdlog` and returns `false` from the
+ * enclosing function.
+ *
+ * @param func The function to call. This function should return an integer
+ * status code.
+ * @param msg A descriptive message indicating the operation being performed.
+ * This message will be included in the error log if the function fails.
+ * @param ... Variadic arguments that are passed to the function `func`.
+ */
 #define CALL_AND_CHECK(func, msg, ...)                               \
     do {                                                             \
         int ret = func(__VA_ARGS__);                                 \
@@ -17,6 +43,18 @@
 
 namespace radar::camera {
 
+/**
+ * @brief Constructor for HikCamera.
+ * @param camera_sn Camera serial number.
+ * @param width Camera resolution width.
+ * @param height Camera resolution height.
+ * @param exposure Camera exposure time.
+ * @param gamma Gamma correction value.
+ * @param gain Gain value.
+ * @param grab_timeout Timeout for grabbing an image.
+ * @param auto_white_balance Whether auto white balance is enabled.
+ * @param balance_ratio White balance ratio for RGB channels.
+ */
 HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
                      unsigned int height, float exposure, float gamma,
                      float gain, unsigned int grab_timeout,
@@ -68,6 +106,9 @@ HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
     }
 }
 
+/**
+ * @brief Destructor for HikCamera.
+ */
 HikCamera::~HikCamera() {
     spdlog::info("Destroying camera with serial number: {}", camera_sn_);
 
@@ -88,6 +129,10 @@ HikCamera::~HikCamera() {
     daemon_thread_.request_stop();
 }
 
+/**
+ * @brief Opens the camera for use.
+ * @return True if the camera was opened successfully, false otherwise.
+ */
 bool HikCamera::open() {
     spdlog::info("Opening camera with serial number: {}", camera_sn_);
 
@@ -191,6 +236,10 @@ bool HikCamera::open() {
     return true;
 }
 
+/**
+ * @brief Closes the camera.
+ * @return True if the camera was closed successfully, false otherwise.
+ */
 bool HikCamera::close() {
     spdlog::info("Closing camera with serial number: {}", camera_sn_);
 
@@ -231,6 +280,10 @@ bool HikCamera::close() {
     return true;
 }
 
+/**
+ * @brief Reconnects the camera by closing and reopening it.
+ * @return True if the camera was reconnected successfully, false otherwise.
+ */
 bool HikCamera::reconnect() {
     spdlog::warn("Reconnecting camera with serial number: {}", camera_sn_);
 
@@ -256,6 +309,10 @@ bool HikCamera::reconnect() {
     }
 }
 
+/**
+ * @brief Starts capturing images from the camera.
+ * @return True if capturing started successfully, false otherwise.
+ */
 bool HikCamera::startCapture() {
     spdlog::trace(
         "Attempting to start capture on camera with serial number: {}",
@@ -283,6 +340,10 @@ bool HikCamera::startCapture() {
     return true;
 }
 
+/**
+ * @brief Stops capturing images from the camera.
+ * @return True if capturing stopped successfully, false otherwise.
+ */
 bool HikCamera::stopCapture() {
     spdlog::trace("Attempting to stop capture on camera with serial number: {}",
                   camera_sn_);
@@ -309,6 +370,12 @@ bool HikCamera::stopCapture() {
     return true;
 }
 
+/**
+ * @brief Grabs an image from the camera.
+ * @param image Output cv::Mat containing the image.
+ * @param pixel_format Desired pixel format for the image.
+ * @return True if the image was grabbed successfully, false otherwise.
+ */
 bool HikCamera::grabImage(cv::Mat& image,
                           camera::PixelFormat pixel_format) noexcept {
     spdlog::debug("Attempting to grab image from camera with serial number: {}",
@@ -367,6 +434,11 @@ bool HikCamera::grabImage(cv::Mat& image,
     return true;
 }
 
+/**
+ * @brief Sets the pixel format for the camera.
+ * @param supported_types Span of supported pixel formats.
+ * @return True if the pixel format was set successfully, false otherwise.
+ */
 bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
     spdlog::debug("Attempting to set pixel format for camera {}.", camera_sn_);
 
@@ -415,11 +487,21 @@ bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
     return true;
 }
 
+/**
+ * @brief Gets the camera's resolution.
+ * @return A pair of integers representing the width and height.
+ */
 std::pair<int, int> HikCamera::getResolution() const {
     std::shared_lock lock(mutex_);
     return std::make_pair(width_, height_);
 }
 
+/**
+ * @brief Sets the camera's resolution.
+ * @param width New width for the camera.
+ * @param height New height for the camera.
+ * @return True if the resolution was set successfully, false otherwise.
+ */
 bool HikCamera::setResolution(int width, int height) {
     std::unique_lock lock(mutex_);
     width_ = width;
@@ -428,11 +510,20 @@ bool HikCamera::setResolution(int width, int height) {
     return true;
 }
 
+/**
+ * @brief Gets the current gain value.
+ * @return The current gain value.
+ */
 float HikCamera::getGain() const {
     std::shared_lock lock(mutex_);
     return gain_;
 }
 
+/**
+ * @brief Sets the gain value for the camera.
+ * @param gain New gain value.
+ * @return True if the gain was set successfully, false otherwise.
+ */
 bool HikCamera::setGain(float gain) {
     std::unique_lock lock(mutex_);
     gain_ = gain;
@@ -440,11 +531,20 @@ bool HikCamera::setGain(float gain) {
     return true;
 }
 
+/**
+ * @brief Gets the current exposure time.
+ * @return The current exposure time.
+ */
 int HikCamera::getExposureTime() const {
     std::shared_lock lock(mutex_);
     return static_cast<int>(exposure_);
 }
 
+/**
+ * @brief Sets a new exposure time for the camera.
+ * @param exposure New exposure time.
+ * @return True if the exposure time was set successfully, false otherwise.
+ */
 bool HikCamera::setExposureTime(int exposure) {
     std::unique_lock lock(mutex_);
     exposure_ = exposure;
@@ -452,11 +552,20 @@ bool HikCamera::setExposureTime(int exposure) {
     return true;
 }
 
+/**
+ * @brief Gets the current white balance ratio.
+ * @return An array representing the white balance ratio for RGB channels.
+ */
 std::array<unsigned int, 3> HikCamera::getBalanceRatio() const {
     std::shared_lock lock(mutex_);
     return balance_ratio_;
 }
 
+/**
+ * @brief Sets the white balance ratio.
+ * @param balance New white balance ratio for RGB channels.
+ * @return True if the balance ratio was set successfully, false otherwise.
+ */
 bool HikCamera::setBalanceRatio(std::array<unsigned int, 3>&& balance) {
     std::unique_lock lock(mutex_);
     balance_ratio_ = balance;
@@ -464,11 +573,21 @@ bool HikCamera::setBalanceRatio(std::array<unsigned int, 3>&& balance) {
     return true;
 }
 
+/**
+ * @brief Determines if auto white balance is enabled.
+ * @return True if auto white balance is enabled, false otherwise.
+ */
 bool HikCamera::getBalanceRatioAuto() const {
     std::shared_lock lock(mutex_);
     return auto_white_balance_;
 }
 
+/**
+ * @brief Enables or disables auto white balance.
+ * @param balance_auto Whether to enable auto white balance.
+ * @return True if the auto white balance setting was applied successfully,
+ * false otherwise.
+ */
 bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
     std::unique_lock lock(mutex_);
     auto_white_balance_ = balance_auto;
@@ -476,17 +595,30 @@ bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
     return true;
 }
 
+/**
+ * @brief Gets the camera's serial number.
+ * @return The camera's serial number as a string.
+ */
 std::string HikCamera::getCameraSn() const {
     std::shared_lock lock(mutex_);
     return camera_sn_;
 }
 
+/**
+ * @brief Sets the resolution of the camera internally.
+ * @return True if the resolution was set successfully, false otherwise.
+ */
 bool HikCamera::setResolutionInner() {
     CALL_AND_CHECK(MV_CC_SetWidth, "set width", handle_, width_);
     CALL_AND_CHECK(MV_CC_SetHeight, "set height", handle_, height_);
     return true;
 }
 
+/**
+ * @brief Sets the white balance ratio internally.
+ * @return True if the white balance ratio was set successfully, false
+ * otherwise.
+ */
 bool HikCamera::setBalanceRatioInner() {
     if (auto_white_balance_) {
         CALL_AND_CHECK(MV_CC_SetBalanceWhiteAuto, "set balance white auto",
@@ -506,6 +638,10 @@ bool HikCamera::setBalanceRatioInner() {
     return true;
 }
 
+/**
+ * @brief Sets the exposure value internally.
+ * @return True if the exposure value was set successfully, false otherwise.
+ */
 bool HikCamera::setExposureInner() {
     if (exposure_ > 0) {
         CALL_AND_CHECK(MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
@@ -519,6 +655,10 @@ bool HikCamera::setExposureInner() {
     return true;
 }
 
+/**
+ * @brief Sets the gamma correction value internally.
+ * @return True if the gamma value was set successfully, false otherwise.
+ */
 bool HikCamera::setGammaInner() {
     if (gamma_ > 0.0f) {
         CALL_AND_CHECK(MV_CC_SetBoolValue, "set gamma enable", handle_,
@@ -530,6 +670,10 @@ bool HikCamera::setGammaInner() {
     return true;
 }
 
+/**
+ * @brief Sets the gain value internally.
+ * @return True if the gain value was set successfully, false otherwise.
+ */
 bool HikCamera::setGainInner() {
     if (gain_ > 0) {
         CALL_AND_CHECK(MV_CC_SetGainMode, "set gain auto", handle_,
@@ -542,14 +686,35 @@ bool HikCamera::setGainInner() {
     return true;
 }
 
+/**
+ * @brief Checks if the camera is currently open.
+ * @return True if the camera is open, false otherwise.
+ */
 bool HikCamera::isOpen() const { return is_open_; }
 
+/**
+ * @brief Checks if the camera is currently capturing images.
+ * @return True if the camera is capturing, false otherwise.
+ */
 bool HikCamera::isCapturing() const { return is_capturing_; }
 
+/**
+ * @brief Sets the exception flag for the camera.
+ * @param flag New value for the exception flag.
+ */
 void HikCamera::setExceptionFlag(bool flag) { exception_flag_ = flag; }
 
+/**
+ * @brief Gets the current value of the exception flag.
+ * @return True if an exception has occurred, false otherwise.
+ */
 bool HikCamera::getExceptionFlag() const { return exception_flag_; }
 
+/**
+ * @brief Gets camera information from a device info structure.
+ * @param device_info Pointer to the device info structure.
+ * @return A formatted string containing the camera information.
+ */
 std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
     assert(device_info->nTLayerType == MV_USB_DEVICE && "Wrong device type");
     auto info = &device_info->SpecialInfo.stUsb3VInfo;
@@ -567,11 +732,20 @@ std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
         reinterpret_cast<const char*>(info->chVendorName));
 }
 
+/**
+ * @brief Gets camera information from the current device.
+ * @return A formatted string containing the camera information.
+ */
 std::string HikCamera::getCameraInfo() const {
     std::shared_lock lock(mutex_);
     return HikCamera::getCameraInfo(device_info_.get());
 }
 
+/**
+ * @brief Exception handler callback function.
+ * @param code Exception code.
+ * @param user Pointer to the user-defined data (in this case, the camera).
+ */
 void HikCamera::exceptionHandler(unsigned int code, void* user) {
     auto camera = static_cast<HikCamera*>(user);
     spdlog::error("Exception occurred in HikCamera {}: code {}",
@@ -579,6 +753,9 @@ void HikCamera::exceptionHandler(unsigned int code, void* user) {
     camera->setExceptionFlag(true);
 }
 
+/**
+ * @brief Starts a daemon thread to monitor camera exceptions.
+ */
 void HikCamera::startDaemonThread() {
     daemon_thread_ = std::jthread([this](std::stop_token token) {
         while (!token.stop_requested()) {
@@ -606,6 +783,10 @@ void HikCamera::startDaemonThread() {
                  std::hash<std::thread::id>{}(daemon_thread_.get_id()));
 }
 
+/**
+ * @brief Retrieves the list of available device information.
+ * @return A span of pointers to the device information structures.
+ */
 std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
     std::call_once(device_info_list_init_flag_, [] {
         device_info_list_ = std::make_shared<MV_CC_DEVICE_INFO_LIST>();
@@ -629,6 +810,11 @@ std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
                                          device_info_list_->nDeviceNum);
 }
 
+/**
+ * @brief Converts the pixel format of an image.
+ * @param image The image to convert.
+ * @param format The desired pixel format.
+ */
 void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
     switch (pixel_type_) {
         case PixelType::RGB8Packed:

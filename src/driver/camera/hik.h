@@ -1,3 +1,20 @@
+/**
+ * @file hik.h
+ * @author zmsbruce (zmsbruce@163.com)
+ * @brief Defines the HikCamera class for interfacing with Hikvision cameras.
+ *
+ * This file contains the declaration of the `HikCamera` class, a specialized
+ * implementation of the `ColorCamera` interface. The class supports a wide
+ * variety of camera control functionalities, including resolution, exposure,
+ * gain, white balance, and pixel format conversion, and integrates with
+ * Hikvision's SDK through `MvCameraControl.h`.
+ * @date 2024-10-27
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #pragma once
 
 #include <MvCameraControl.h>
@@ -5,9 +22,9 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <shared_mutex>
 #include <span>
-#include <stdexcept>
 #include <string_view>
 #include <thread>
 
@@ -15,9 +32,22 @@
 
 namespace radar::camera {
 
+/**
+ * @brief A class representing a Hikvision camera interface.
+ *
+ * This class extends `ColorCamera` and provides functionality for controlling
+ * and capturing images from Hikvision cameras. It supports features such as
+ * exposure control, white balance, gain adjustment, and pixel format
+ * management. It also handles device connection and disconnection, and includes
+ * methods for querying camera information.
+ */
 class HikCamera : public ColorCamera {
    public:
+    /**
+     * @brief Deleted default constructor.
+     */
     HikCamera() = delete;
+
     HikCamera(std::string_view camera_sn, unsigned int width,
               unsigned int height, float exposure, float gamma, float gain,
               unsigned int grab_timeout = 1000, bool auto_white_balance = true,
@@ -48,21 +78,49 @@ class HikCamera : public ColorCamera {
     bool isCapturing() const override;
 
    private:
+    /**
+     * @brief Enum class representing the white balance auto mode.
+     */
     enum class BalanceWhiteAuto { Off = 0, Continuous = 1, Once = 2 };
+
+    /**
+     * @brief Enum class representing the exposure auto mode.
+     */
     enum class ExposureAuto { Off = 0, Once = 1, Continuous = 2 };
+
+    /**
+     * @brief Enum class representing the gamma selection mode.
+     */
     enum class GammaSelector { User = 1, sRGB = 2 };
+
+    /**
+     * @brief Enum class representing the gain auto mode.
+     */
     enum class GainAuto { Off = 0, Once = 1, Continuous = 2 };
+
+    /**
+     * @brief Enum class representing the white balance ratio selector.
+     */
     enum class BalanceRatioSelector { Red = 0, Green = 1, Blue = 2 };
+
+    /**
+     * @brief Enum class representing the trigger mode.
+     */
     enum class TriggerMode { Off = 0, On = 1 };
+
+    /**
+     * @brief Enum class representing different pixel types supported by the
+     * camera.
+     */
     enum class PixelType {
-        Unknown = 0x0,
-        RGB8Packed = 0x02180014,
-        YUV422_8 = 0x02100032,
-        YUV422_8_UYVY = 0x0210001F,
-        BayerGR8 = 0x01080008,
-        BayerRG8 = 0x01080009,
-        BayerGB8 = 0x0108000A,
-        BayerBG8 = 0x0108000B
+        Unknown = 0x0,               ///< Unknown pixel type.
+        RGB8Packed = 0x02180014,     ///< RGB 8-bit packed pixel format.
+        YUV422_8 = 0x02100032,       ///< YUV 4:2:2 8-bit format.
+        YUV422_8_UYVY = 0x0210001F,  ///< YUV 4:2:2 8-bit UYVY format.
+        BayerGR8 = 0x01080008,       ///< Bayer GR 8-bit format.
+        BayerRG8 = 0x01080009,       ///< Bayer RG 8-bit format.
+        BayerGB8 = 0x0108000A,       ///< Bayer GB 8-bit format.
+        BayerBG8 = 0x0108000B        ///< Bayer BG 8-bit format.
     };
 
     static std::span<MV_CC_DEVICE_INFO*> getDeviceInfoList();

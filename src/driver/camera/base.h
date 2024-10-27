@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <opencv2/opencv.hpp>
 #include <string>
 
@@ -37,8 +38,8 @@ class Camera {
     virtual bool isCapturing() const = 0;
 
    protected:
-    bool is_open_ = false;
-    bool is_capturing_ = false;
+    std::atomic_bool is_open_ = false;
+    std::atomic_bool is_capturing_ = false;
 };
 
 class ColorCamera : public Camera {

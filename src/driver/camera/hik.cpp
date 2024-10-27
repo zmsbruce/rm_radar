@@ -2,7 +2,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -32,43 +31,45 @@ HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
       grab_timeout_{grab_timeout},
       auto_white_balance_{auto_white_balance},
       balance_ratio_{balance_ratio},
-      frame_out_{new MV_FRAME_OUT},
-      device_info_{new MV_CC_DEVICE_INFO} {
-    std::memset(frame_out_, 0, sizeof(MV_FRAME_OUT));
-    std::memset(device_info_, 0, sizeof(MV_CC_DEVICE_INFO));
+      frame_out_{std::make_unique<MV_FRAME_OUT>()},
+      device_info_{std::make_unique<MV_CC_DEVICE_INFO>()} {
+    std::memset(device_info_.get(), 0, sizeof(MV_CC_DEVICE_INFO));
     startDaemonThread();
+    if (!open()) {
+        throw std::runtime_error(
+            fmt::format("Failed to open HikCamera {}", camera_sn));
+    }
 }
 
 HikCamera::~HikCamera() {
-    delete frame_out_;
-    delete device_info_;
+    spdlog::info("Destroying HikCamera with serial number: {}", camera_sn_);
+    if (isOpen()) {
+        close();
+    }
+    daemon_thread_.request_stop();
 }
 
 bool HikCamera::open() {
+    spdlog::info("Opening HikCamera with serial number: {}", camera_sn_);
+
     std::unique_lock lock(mutex_);
+    spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
 
-    MV_CC_DEVICE_INFO_LIST device_info_list;
-    std::memset(&device_info_list, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
-
-    CALL_AND_CHECK(MV_CC_EnumDevices, "enum devices", MV_USB_DEVICE,
-                   &device_info_list);
-
-    auto device_info_ptr = std::find_if(
-        device_info_list.pDeviceInfo,
-        device_info_list.pDeviceInfo + device_info_list.nDeviceNum,
-        [this](MV_CC_DEVICE_INFO* device_info) {
+    auto device_info_list = HikCamera::getDeviceInfoList();
+    auto device_info_iter = std::ranges::find_if(
+        device_info_list, [this](MV_CC_DEVICE_INFO* device_info) {
             return reinterpret_cast<const char*>(
                        device_info->SpecialInfo.stUsb3VInfo.chSerialNumber) ==
                    camera_sn_;
         });
-    if (device_info_ptr ==
-        device_info_list.pDeviceInfo + device_info_list.nDeviceNum) {
+
+    if (device_info_iter == device_info_list.end()) {
         spdlog::critical("No devices found for {}", camera_sn_);
         return false;
     }
 
     CALL_AND_CHECK(MV_CC_CreateHandle, "create handle", &handle_,
-                   *device_info_ptr);
+                   *device_info_iter);
 
     CALL_AND_CHECK(MV_CC_OpenDevice, "open device", handle_);
 
@@ -91,11 +92,15 @@ bool HikCamera::open() {
                    HikCamera::exceptionHandler, this);
 
     is_open_ = true;
+    spdlog::info("HikCamera {} opened successfully.", camera_sn_);
     return true;
 }
 
 void HikCamera::close() {
-    stopCapture();
+    spdlog::info("Closing HikCamera with serial number: {}", camera_sn_);
+    if (isCapturing()) {
+        stopCapture();
+    }
 
     std::unique_lock lock(mutex_);
 
@@ -111,44 +116,67 @@ void HikCamera::close() {
 
     handle_ = nullptr;
     is_open_ = false;
+    spdlog::info("HikCamera {} closed successfully.", camera_sn_);
 }
 
 bool HikCamera::reconnect() {
+    spdlog::warn("Reconnecting HikCamera with serial number: {}", camera_sn_);
     close();
     return open();
 }
 
 bool HikCamera::startCapture() {
-    std::unique_lock lock(mutex_);
-
-    CALL_AND_CHECK(MV_CC_StartGrabbing, "start grabbing", handle_);
-    is_capturing_ = true;
+    spdlog::trace("Starting capture on HikCamera with serial number: {}",
+                  camera_sn_);
+    {
+        std::unique_lock lock(mutex_);
+        CALL_AND_CHECK(MV_CC_StartGrabbing, "start grabbing", handle_);
+        is_capturing_ = true;
+    }
+    spdlog::info("Capture started on HikCamera {}.", camera_sn_);
     return true;
 }
 
 bool HikCamera::stopCapture() {
-    std::unique_lock lock(mutex_);
+    spdlog::trace("Stopping capture on HikCamera with serial number: {}",
+                  camera_sn_);
+    {
+        std::unique_lock lock(mutex_);
 
-    CALL_AND_CHECK(MV_CC_StopGrabbing, "stop grabbing", handle_);
-    is_capturing_ = false;
+        CALL_AND_CHECK(MV_CC_StopGrabbing, "stop grabbing", handle_);
+        is_capturing_ = false;
+    }
+    spdlog::info("Capture stopped on HikCamera {}.", camera_sn_);
     return true;
 }
 
 bool HikCamera::grabImage(cv::Mat& image,
                           camera::PixelFormat pixel_format) noexcept {
+    spdlog::debug("Grabbing image from HikCamera with serial number: {}",
+                  camera_sn_);
     if (!isOpen() || !isCapturing()) {
+        spdlog::error("HikCamera {} is not open or capturing.", camera_sn_);
         return false;
     }
 
-    std::unique_lock lock(mutex_);
-    std::memset(frame_out_, 0, sizeof(MV_FRAME_OUT));
-    CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
-                   frame_out_, grab_timeout_);
+    {
+        std::unique_lock lock(mutex_);
+        std::memset(frame_out_.get(), 0, sizeof(MV_FRAME_OUT));
+        CALL_AND_CHECK(MV_CC_GetImageBuffer, "get image buffer", handle_,
+                       frame_out_.get(), grab_timeout_);
+    }
+
     image =
         cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
                 CV_8UC3, frame_out_->pBufAddr);
+    if (image.empty()) {
+        spdlog::error("Failed to grab image: image is empty.");
+        return false;
+    }
+
     convertPixelFormat(image, pixel_format);
 
+    spdlog::trace("Image grabbed successfully from HikCamera {}.", camera_sn_);
     return true;
 }
 
@@ -305,24 +333,17 @@ bool HikCamera::setGainInner() {
     return true;
 }
 
-bool HikCamera::isOpen() const {
-    std::shared_lock lock(mutex_);
-    return is_open_;
-}
+bool HikCamera::isOpen() const { return is_open_; }
 
-bool HikCamera::isCapturing() const {
-    std::shared_lock lock(mutex_);
-    return is_capturing_;
-}
+bool HikCamera::isCapturing() const { return is_capturing_; }
 
 void HikCamera::setExceptionFlag(bool flag) { exception_flag_ = flag; }
 
-bool HikCamera::getExceptionFlag() const { return exception_flag_.load(); }
+bool HikCamera::getExceptionFlag() const { return exception_flag_; }
 
-std::string HikCamera::getCameraInfo() const {
-    std::shared_lock lock(mutex_);
-    assert(device_info_->nTLayerType == MV_USB_DEVICE && "Wrong device type");
-    auto info = &device_info_->SpecialInfo.stUsb3VInfo;
+std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
+    assert(device_info->nTLayerType == MV_USB_DEVICE && "Wrong device type");
+    auto info = &device_info->SpecialInfo.stUsb3VInfo;
     return fmt::format(
         "device guid: {}, device version: {}, family name: {}, manufacturer "
         "name: {}, model name: {}, serial number: {}, user defined name: {}, "
@@ -337,6 +358,11 @@ std::string HikCamera::getCameraInfo() const {
         reinterpret_cast<const char*>(info->chVendorName));
 }
 
+std::string HikCamera::getCameraInfo() const {
+    std::shared_lock lock(mutex_);
+    return HikCamera::getCameraInfo(device_info_.get());
+}
+
 void HikCamera::exceptionHandler(unsigned int code, void* user) {
     auto camera = static_cast<HikCamera*>(user);
     spdlog::error("Exception occurred in HikCamera {}: code {}",
@@ -345,8 +371,8 @@ void HikCamera::exceptionHandler(unsigned int code, void* user) {
 }
 
 void HikCamera::startDaemonThread() {
-    auto daemon_thread = std::thread([this] {
-        while (true) {
+    daemon_thread_ = std::jthread([this](std::stop_token token) {
+        while (!token.stop_requested()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             if (getExceptionFlag() == true) {
                 spdlog::info(
@@ -365,10 +391,33 @@ void HikCamera::startDaemonThread() {
                 }
             }
         }
+        spdlog::info("Daemon thread stopping...");
     });
-    spdlog::info("HikCamera {} daemon thread starts, id: {:#x}", camera_sn_,
-                 std::hash<std::thread::id>{}(daemon_thread.get_id()));
-    daemon_thread.detach();
+    spdlog::info("HikCamera {} daemon thread started, id: {:#x}", camera_sn_,
+                 std::hash<std::thread::id>{}(daemon_thread_.get_id()));
+}
+
+std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
+    std::call_once(device_info_list_init_flag_, [] {
+        device_info_list_ = std::make_shared<MV_CC_DEVICE_INFO_LIST>();
+        std::memset(device_info_list_.get(), 0, sizeof(MV_CC_DEVICE_INFO_LIST));
+        spdlog::trace("Initialized MV_CC_DEVICE_INFO_LIST structure");
+
+        int ret = MV_CC_EnumDevices(MV_USB_DEVICE, device_info_list_.get());
+        if (ret != MV_OK) {
+            spdlog::critical("Failed to enum devices, error code: {}", ret);
+        }
+
+        spdlog::info("Enumerated devices, found {} devices.",
+                     device_info_list_->nDeviceNum);
+        for (unsigned int i = 0; i < device_info_list_->nDeviceNum; ++i) {
+            auto device_info = device_info_list_->pDeviceInfo[i];
+            spdlog::info("Camera {}: {}", i,
+                         HikCamera::getCameraInfo(device_info));
+        }
+    });
+    return std::span<MV_CC_DEVICE_INFO*>(device_info_list_->pDeviceInfo,
+                                         device_info_list_->nDeviceNum);
 }
 
 void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {

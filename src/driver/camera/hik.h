@@ -9,6 +9,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 
 #include "driver/camera/base.h"
 
@@ -64,6 +65,8 @@ class HikCamera : public ColorCamera {
         BayerBG8 = 0x0108000B
     };
 
+    static std::span<MV_CC_DEVICE_INFO*> getDeviceInfoList();
+    static std::string getCameraInfo(MV_CC_DEVICE_INFO* device_info);
     static void exceptionHandler(unsigned int msg_type, void* user);
     bool setPixelType(std::span<unsigned int> supported_types);
     void convertPixelFormat(cv::Mat& image, PixelFormat format);
@@ -85,10 +88,13 @@ class HikCamera : public ColorCamera {
     std::array<unsigned int, 3> balance_ratio_;
     void* handle_ = nullptr;
     std::atomic_bool exception_flag_ = false;
-    MV_FRAME_OUT* frame_out_ = nullptr;
-    MV_CC_DEVICE_INFO* device_info_ = nullptr;
+    std::unique_ptr<MV_FRAME_OUT> frame_out_ = nullptr;
+    std::unique_ptr<MV_CC_DEVICE_INFO> device_info_ = nullptr;
     PixelType pixel_type_ = PixelType::Unknown;
     mutable std::shared_mutex mutex_;
+    static std::shared_ptr<MV_CC_DEVICE_INFO_LIST> device_info_list_;
+    static std::once_flag device_info_list_init_flag_;
+    std::jthread daemon_thread_;
 };
 
 }  // namespace radar::camera

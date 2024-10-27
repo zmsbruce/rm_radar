@@ -8,7 +8,7 @@ add_library(locator SHARED
 target_include_directories(locator PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/task/rdlt
 )
 
 target_link_libraries(locator PUBLIC

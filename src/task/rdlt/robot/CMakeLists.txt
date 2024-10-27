@@ -8,7 +8,7 @@ add_library(robot SHARED
 target_include_directories(robot PUBLIC
     ${EIGEN3_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/task/rdlt
 )
 
 target_link_libraries(robot PUBLIC

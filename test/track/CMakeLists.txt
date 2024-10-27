@@ -9,7 +9,7 @@ add_executable(track_test
 )
 
 target_include_directories(track_test PRIVATE
-    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/task/rdlt
     ${EIGEN3_INCLUDE_DIR}
 )
 

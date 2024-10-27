@@ -9,7 +9,7 @@
  *
  */
 
-#include "detect/detector.h"
+#include "detector.h"
 
 #include <NvInfer.h>
 #include <NvInferPlugin.h>

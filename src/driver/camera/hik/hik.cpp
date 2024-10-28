@@ -14,36 +14,27 @@
 
 #include <spdlog/spdlog.h>
 
+#include <magic_enum/magic_enum_all.hpp>
 #include <stdexcept>
 #include <vector>
 
-#define HIK_CHECK_RETURN_BOOL(func, msg, ...)                        \
-    do {                                                             \
-        int ret = func(__VA_ARGS__);                                 \
-        if (MV_OK != ret) {                                          \
-            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
-                             static_cast<unsigned int>(ret));        \
-            return false;                                            \
-        }                                                            \
+#define HIK_CHECK_RETURN_BOOL(func, msg, ...)                     \
+    do {                                                          \
+        int ret = func(__VA_ARGS__);                              \
+        if (MV_OK != ret) {                                       \
+            spdlog::error("Failed to {}, error code: {:#x}", msg, \
+                          static_cast<unsigned int>(ret));        \
+            return false;                                         \
+        }                                                         \
     } while (0)
 
-#define HIK_CHECK_RETURN_VOID(func, msg, ...)                        \
-    do {                                                             \
-        int ret = func(__VA_ARGS__);                                 \
-        if (MV_OK != ret) {                                          \
-            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
-                             static_cast<unsigned int>(ret));        \
-            return;                                                  \
-        }                                                            \
-    } while (0)
-
-#define HIK_CHECK_NORETURN(func, msg, ...)                           \
-    do {                                                             \
-        int ret = func(__VA_ARGS__);                                 \
-        if (MV_OK != ret) {                                          \
-            spdlog::critical("Failed to {}, error code: {:#x}", msg, \
-                             static_cast<unsigned int>(ret));        \
-        }                                                            \
+#define HIK_CHECK_NORETURN(func, msg, ...)                        \
+    do {                                                          \
+        int ret = func(__VA_ARGS__);                              \
+        if (MV_OK != ret) {                                       \
+            spdlog::error("Failed to {}, error code: {:#x}", msg, \
+                          static_cast<unsigned int>(ret));        \
+        }                                                         \
     } while (0)
 
 namespace radar::camera {
@@ -56,14 +47,15 @@ namespace radar::camera {
  * @param exposure Camera exposure time.
  * @param gamma Gamma correction value.
  * @param gain Gain value.
+ * @param pixel_format Camera pixel format.
  * @param grab_timeout Timeout for grabbing an image.
  * @param auto_white_balance Whether auto white balance is enabled.
  * @param balance_ratio White balance ratio for RGB channels.
  */
 HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
                      unsigned int height, float exposure, float gamma,
-                     float gain, unsigned int grab_timeout,
-                     bool auto_white_balance,
+                     float gain, std::string_view pixel_format,
+                     unsigned int grab_timeout, bool auto_white_balance,
                      std::array<unsigned int, 3>&& balance_ratio)
     : camera_sn_{camera_sn},
       width_{width},
@@ -71,44 +63,34 @@ HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
       exposure_{exposure},
       gamma_{gamma},
       gain_{gain},
+      pixel_format_{magic_enum::enum_cast<HikPixelFormat>(pixel_format)
+                        .value_or(HikPixelFormat::Unknown)},
       grab_timeout_{grab_timeout},
       auto_white_balance_{auto_white_balance},
       balance_ratio_{balance_ratio},
       frame_out_{std::make_unique<MV_FRAME_OUT>()},
-      device_info_{std::make_unique<MV_CC_DEVICE_INFO>()} {
+      device_info_{std::make_unique<MV_CC_DEVICE_INFO>()},
+      supported_pixel_formats_{std::make_unique<MVCC_ENUMVALUE>()} {
     spdlog::trace("Initializing HikCamera with SN: {}", camera_sn);
     spdlog::debug(
         "Camera parameters: width={}, height={}, exposure={}, gamma={}, "
-        "gain={}, grab timeout: {}, auto white balance: {}, balance ratio: "
+        "gain={}, pixel_format: {} grab timeout: {}, auto white balance: {}, "
+        "balance ratio: "
         "[{}, {}, {}]",
-        width, height, exposure, gamma, gain, grab_timeout, auto_white_balance,
-        balance_ratio[0], balance_ratio[1], balance_ratio[2]);
+        width, height, exposure, gamma, gain, pixel_format, grab_timeout,
+        auto_white_balance, balance_ratio[0], balance_ratio[1],
+        balance_ratio[2]);
 
     // Initializing device info
     std::memset(device_info_.get(), 0, sizeof(MV_CC_DEVICE_INFO));
     spdlog::trace("Device info structure initialized.");
 
+    // Initializing supported pixel formats
+    std::memset(supported_pixel_formats_.get(), 0, sizeof(MVCC_ENUMVALUE));
+
     // Starting daemon thread
     spdlog::trace("Starting daemon thread.");
     startDaemonThread();
-
-    // Attempt to open the camera
-    spdlog::trace("Attempting to open camera with SN: {}", camera_sn);
-    if (!open()) {
-        auto error_info =
-            fmt::format("Failed to open camera with SN: {}", camera_sn);
-        spdlog::error("{}", error_info);
-        throw std::runtime_error(error_info);
-    }
-
-    // Attempt to start capturing
-    spdlog::trace("Attempting to start capturing with camera: {}", camera_sn);
-    if (!startCapture()) {
-        auto error_info =
-            fmt::format("Failed to start capturing with camera: {}", camera_sn);
-        spdlog::error("{}", error_info);
-        throw std::runtime_error(error_info);
-    }
 }
 
 /**
@@ -135,11 +117,6 @@ HikCamera::~HikCamera() {
  * @return True if the camera was opened successfully, false otherwise.
  */
 bool HikCamera::open() {
-    if (!handle_) {
-        spdlog::warn("Camera handle is not null, will try closing.");
-        close();
-    }
-
     spdlog::info("Opening camera with serial number: {}", camera_sn_);
 
     // Retrieve available device information
@@ -178,19 +155,13 @@ bool HikCamera::open() {
     HIK_CHECK_RETURN_BOOL(MV_CC_OpenDevice, "open device", handle_);
     spdlog::info("Device for camera {} opened successfully.", camera_sn_);
 
-    // Retrieve supported pixel formats
-    MVCC_ENUMVALUE val;
-    spdlog::trace("Getting supported pixel formats for camera {}.", camera_sn_);
-    HIK_CHECK_RETURN_BOOL(MV_CC_GetPixelFormat, "get pixel format", handle_,
-                          &val);
-    auto supported_pixel_format =
-        std::span(val.nSupportValue, val.nSupportedNum);
-    spdlog::debug("Supported pixel format for camera {}: [{:#x}]", camera_sn_,
-                  fmt::join(supported_pixel_format, ", "));
-
     // Set the pixel type based on supported formats
     spdlog::trace("Setting pixel type for camera {}.", camera_sn_);
-    setPixelType(supported_pixel_format);
+    if (!setPixelFormat(getSupportedPixelFormats())) {
+        spdlog::critical("Failed to set pixel format for camera {}.",
+                         camera_sn_);
+        return false;
+    }
     spdlog::debug("Pixel type set successfully for camera {}.", camera_sn_);
 
     // Setting camera configurations: resolution, balance ratio, exposure,
@@ -255,8 +226,12 @@ void HikCamera::close() {
     if (isCapturing()) {
         spdlog::debug("Camera {} is capturing, attempting to stop capture.",
                       camera_sn_);
-        stopCapture();
-        spdlog::info("Capture stopped successfully for camera {}.", camera_sn_);
+        if (stopCapture()) {
+            spdlog::info("Capture stopped successfully for camera {}.",
+                         camera_sn_);
+        } else {
+            spdlog::error("Failed to stop capture for camera {}.", camera_sn_);
+        }
     }
 
     // Acquire lock before modifying camera state
@@ -433,41 +408,74 @@ bool HikCamera::grabImage(cv::Mat& image,
 }
 
 /**
+ * @brief Gets all pixel formats supported for the camera.
+ * @return Supported pixel formats.
+ */
+std::span<unsigned int> HikCamera::getSupportedPixelFormats() {
+    spdlog::trace("Getting supported pixel formats for camera {}.", camera_sn_);
+    int ret = MV_CC_GetPixelFormat(handle_, supported_pixel_formats_.get());
+    if (ret != MV_OK) {
+        spdlog::error("Failed to get pixel format, error code: {}");
+        return {};
+    }
+    auto supported_pixel_format =
+        std::span(supported_pixel_formats_->nSupportValue,
+                  supported_pixel_formats_->nSupportedNum);
+    spdlog::debug("Supported pixel format for camera {}: [{:#x}]", camera_sn_,
+                  fmt::join(supported_pixel_format, ", "));
+    return supported_pixel_format;
+}
+
+/**
  * @brief Sets the pixel format for the camera.
- * @param supported_types Span of supported pixel formats.
+ * @param supported_formats Span of supported pixel formats.
  * @return True if the pixel format was set successfully, false otherwise.
  */
-bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
+bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
     spdlog::debug("Attempting to set pixel format for camera {}.", camera_sn_);
 
-    const std::vector<PixelType> candidate_types{
-        PixelType::RGB8Packed,    PixelType::BayerBG8, PixelType::BayerGB8,
-        PixelType::BayerGR8,      PixelType::BayerRG8, PixelType::YUV422_8,
-        PixelType::YUV422_8_UYVY,
+    static const std::vector<HikPixelFormat> candidate_formats{
+        HikPixelFormat::RGB8Packed,    HikPixelFormat::BayerBG8,
+        HikPixelFormat::BayerGB8,      HikPixelFormat::BayerGR8,
+        HikPixelFormat::BayerRG8,      HikPixelFormat::YUV422_8,
+        HikPixelFormat::YUV422_8_UYVY,
     };
 
     spdlog::trace("Supported pixel formats for camera {}: [{}]", camera_sn_,
-                  fmt::join(supported_types, ", "));
+                  fmt::join(supported_formats, ", "));
 
-    // Iterate over candidate types and check if any are supported
-    for (PixelType type : candidate_types) {
+    if (std::ranges::any_of(
+            supported_formats, [this](unsigned int supported_type) {
+                return static_cast<unsigned int>(pixel_format_) ==
+                       supported_type;
+            })) {
+        return true;
+    } else if (pixel_format_ != HikPixelFormat::Unknown) {
+        spdlog::warn(
+            "Current pixel format is {} which is not supported, will choose "
+            "another.",
+            magic_enum::enum_name(pixel_format_));
+    }
+
+    // Iterate over candidate formats and check if any are supported
+    for (auto type : candidate_formats) {
         spdlog::trace("Checking if pixel format {} is supported.",
                       static_cast<unsigned int>(type));
 
         if (std::ranges::any_of(
-                supported_types, [type](unsigned int supported_type) {
+                supported_formats, [type](unsigned int supported_type) {
                     return static_cast<unsigned int>(type) == supported_type;
                 })) {
-            pixel_type_ = type;
+            pixel_format_ = type;
             spdlog::debug("Pixel format {} selected for camera {}.",
-                          static_cast<unsigned int>(pixel_type_), camera_sn_);
+                          magic_enum::enum_name(pixel_format_), camera_sn_);
             break;
         }
     }
 
     // If no supported pixel type was found, log a critical error
-    if (pixel_type_ == PixelType::Unknown) {
-        spdlog::critical(
+    if (pixel_format_ == HikPixelFormat::Unknown) {
+        spdlog::error(
             "Failed to set pixel format for camera {}: no supported format "
             "found.",
             camera_sn_);
@@ -476,12 +484,12 @@ bool HikCamera::setPixelType(std::span<unsigned int> supported_types) {
 
     // Set the pixel format using the selected pixel type
     spdlog::trace("Setting pixel format to {} for camera {}.",
-                  static_cast<unsigned int>(pixel_type_), camera_sn_);
+                  magic_enum::enum_name(pixel_format_), camera_sn_);
     HIK_CHECK_RETURN_BOOL(MV_CC_SetPixelFormat, "set pixel format", handle_,
-                          static_cast<unsigned int>(pixel_type_));
+                          static_cast<unsigned int>(pixel_format_));
 
     spdlog::info("Pixel format set successfully to {} for camera {}.",
-                 static_cast<unsigned int>(pixel_type_), camera_sn_);
+                 magic_enum::enum_name(pixel_format_), camera_sn_);
     return true;
 }
 
@@ -504,8 +512,7 @@ bool HikCamera::setResolution(int width, int height) {
     std::unique_lock lock(mutex_);
     width_ = width;
     height_ = height;
-    setBalanceRatioInner();
-    return true;
+    return setResolutionInner();
 }
 
 /**
@@ -525,8 +532,7 @@ float HikCamera::getGain() const {
 bool HikCamera::setGain(float gain) {
     std::unique_lock lock(mutex_);
     gain_ = gain;
-    setGainInner();
-    return true;
+    return setGainInner();
 }
 
 /**
@@ -546,8 +552,7 @@ int HikCamera::getExposureTime() const {
 bool HikCamera::setExposureTime(int exposure) {
     std::unique_lock lock(mutex_);
     exposure_ = exposure;
-    setExposureInner();
-    return true;
+    return setExposureInner();
 }
 
 /**
@@ -567,8 +572,7 @@ std::array<unsigned int, 3> HikCamera::getBalanceRatio() const {
 bool HikCamera::setBalanceRatio(std::array<unsigned int, 3>&& balance) {
     std::unique_lock lock(mutex_);
     balance_ratio_ = balance;
-    setBalanceRatioInner();
-    return true;
+    return setBalanceRatioInner();
 }
 
 /**
@@ -589,8 +593,7 @@ bool HikCamera::getBalanceRatioAuto() const {
 bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
     std::unique_lock lock(mutex_);
     auto_white_balance_ = balance_auto;
-    setBalanceRatioInner();
-    return true;
+    return setBalanceRatioInner();
 }
 
 /**
@@ -607,6 +610,43 @@ std::string HikCamera::getCameraSn() const {
  * @return True if the resolution was set successfully, false otherwise.
  */
 bool HikCamera::setResolutionInner() {
+    MVCC_INTVALUE width;
+    MVCC_INTVALUE height;
+    std::memset(&width, 0, sizeof(MVCC_INTVALUE));
+    std::memset(&height, 0, sizeof(MVCC_INTVALUE));
+
+    HIK_CHECK_NORETURN(MV_CC_GetWidth, "get width", handle_, &width);
+    HIK_CHECK_NORETURN(MV_CC_GetHeight, "get width", handle_, &height);
+    if (width.nMax != 0 || height.nMax != 0) {
+        if (width_ < width.nMin || width_ > width.nMax ||
+            height_ < height.nMin || height_ > height.nMax) {
+            spdlog::error(
+                "Invalid resolution {}x{}. Required width: {}~{}, height: "
+                "{}~{}.",
+                width_, height_, width.nMin, width.nMax, height.nMin,
+                height.nMax);
+            return false;
+        }
+        if (width_ % width.nInc != 0) {
+            auto width_old = width_;
+            width_ = (width_ / width.nInc + 1) * width.nInc;
+            if (width_ > width.nMax) {
+                width_ -= width.nInc;
+            }
+            spdlog::warn("Width should be times of {}, fixed from {} to {}.",
+                         width.nInc, width_old, width_);
+        }
+        if (height_ % height.nInc != 0) {
+            auto height_old = height_;
+            height_ = (height_ / height.nInc + 1) * height.nInc;
+            if (height_ > height.nMax) {
+                height_ -= height.nInc;
+            }
+            spdlog::warn("Height should be times of {}, fixed from {} to {}.",
+                         height.nInc, height_old, height_);
+        }
+    }
+
     HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width_);
     HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_, height_);
     return true;
@@ -690,28 +730,18 @@ bool HikCamera::setGainInner() {
 }
 
 /**
- * @brief Checks if the camera is currently open.
- * @return True if the camera is open, false otherwise.
- */
-bool HikCamera::isOpen() const { return is_open_; }
-
-/**
- * @brief Checks if the camera is currently capturing images.
- * @return True if the camera is capturing, false otherwise.
- */
-bool HikCamera::isCapturing() const { return is_capturing_; }
-
-/**
  * @brief Sets the exception flag for the camera.
- * @param flag New value for the exception flag.
+ * @param occurred New value for the exception flag.
  */
-void HikCamera::setExceptionFlag(bool flag) { exception_flag_ = flag; }
+void HikCamera::setExceptionOccurred(bool occurred) {
+    exception_occurred_ = occurred;
+}
 
 /**
  * @brief Gets the current value of the exception flag.
  * @return True if an exception has occurred, false otherwise.
  */
-bool HikCamera::getExceptionFlag() const { return exception_flag_; }
+bool HikCamera::isExceptionOccurred() const { return exception_occurred_; }
 
 /**
  * @brief Gets camera information from a device info structure.
@@ -753,7 +783,7 @@ void HikCamera::exceptionHandler(unsigned int code, void* user) {
     auto camera = static_cast<HikCamera*>(user);
     spdlog::error("Exception occurred in HikCamera {}: code {}",
                   camera->getCameraSn(), code);
-    camera->setExceptionFlag(true);
+    camera->setExceptionOccurred(true);
 }
 
 /**
@@ -763,7 +793,7 @@ void HikCamera::startDaemonThread() {
     daemon_thread_ = std::jthread([this](std::stop_token token) {
         while (!token.stop_requested()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            if (getExceptionFlag() == true) {
+            if (isExceptionOccurred()) {
                 spdlog::info(
                     "Exception detected in HikCamera {} daemon thread. Try "
                     "reconnecting...",
@@ -771,7 +801,7 @@ void HikCamera::startDaemonThread() {
                 if (reconnect()) {
                     spdlog::info("Successfully reconnected HikCamera {}.",
                                  camera_sn_);
-                    setExceptionFlag(false);
+                    setExceptionOccurred(false);
                 } else {
                     spdlog::error(
                         "Failed to reconnect HikCamera {}, will wait and "
@@ -791,7 +821,7 @@ void HikCamera::startDaemonThread() {
  * @return A span of pointers to the device information structures.
  */
 std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
-    std::call_once(device_info_list_init_flag_, [] {
+    std::call_once(is_device_info_list_init_, [] {
         device_info_list_ = std::make_shared<MV_CC_DEVICE_INFO_LIST>();
         std::memset(device_info_list_.get(), 0, sizeof(MV_CC_DEVICE_INFO_LIST));
         spdlog::trace("Initialized MV_CC_DEVICE_INFO_LIST structure");
@@ -816,8 +846,8 @@ std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
  * @param format The desired pixel format.
  */
 void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
-    switch (pixel_type_) {
-        case PixelType::RGB8Packed:
+    switch (pixel_format_) {
+        case HikPixelFormat::RGB8Packed:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_RGB2GRAY);
@@ -844,7 +874,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::BayerBG8:
+        case HikPixelFormat::BayerBG8:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_BayerBG2GRAY);
@@ -876,7 +906,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::BayerGB8:
+        case HikPixelFormat::BayerGB8:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_BayerGB2GRAY);
@@ -908,7 +938,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::BayerGR8:
+        case HikPixelFormat::BayerGR8:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_BayerGR2GRAY);
@@ -940,7 +970,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::BayerRG8:
+        case HikPixelFormat::BayerRG8:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_BayerRG2GRAY);
@@ -972,7 +1002,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::YUV422_8:
+        case HikPixelFormat::YUV422_8:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_YUYV);
@@ -1004,7 +1034,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             }
             break;
 
-        case PixelType::YUV422_8_UYVY:
+        case HikPixelFormat::YUV422_8_UYVY:
             switch (format) {
                 case PixelFormat::GRAY:
                     cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_UYVY);
@@ -1037,7 +1067,7 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             break;
 
         default:
-            assert(0 && "unreachable code");
+            spdlog::error("Pixel format is unknown in convertPixelFormat");
     }
 }
 

@@ -50,6 +50,7 @@ class HikCamera : public ColorCamera {
 
     HikCamera(std::string_view camera_sn, unsigned int width,
               unsigned int height, float exposure, float gamma, float gain,
+              std::string_view pixel_format = "default",
               unsigned int grab_timeout = 1000, bool auto_white_balance = true,
               std::array<unsigned int, 3>&& balance_ratio = {0, 0, 0});
     ~HikCamera() override;
@@ -71,11 +72,9 @@ class HikCamera : public ColorCamera {
     bool setBalanceRatioAuto(bool balance_auto) override;
     bool getBalanceRatioAuto() const override;
     std::string getCameraInfo() const override;
-    bool isOpen() const override;
-    bool isCapturing() const override;
     std::string getCameraSn() const;
-    void setExceptionFlag(bool flag);
-    bool getExceptionFlag() const;
+    void setExceptionOccurred(bool occurred);
+    bool isExceptionOccurred() const;
 
    private:
     /**
@@ -112,7 +111,7 @@ class HikCamera : public ColorCamera {
      * @brief Enum class representing different pixel types supported by the
      * camera.
      */
-    enum class PixelType {
+    enum class HikPixelFormat {
         Unknown = 0x0,               ///< Unknown pixel type.
         RGB8Packed = 0x02180014,     ///< RGB 8-bit packed pixel format.
         YUV422_8 = 0x02100032,       ///< YUV 4:2:2 8-bit format.
@@ -126,7 +125,8 @@ class HikCamera : public ColorCamera {
     static std::span<MV_CC_DEVICE_INFO*> getDeviceInfoList();
     static std::string getCameraInfo(MV_CC_DEVICE_INFO* device_info);
     static void exceptionHandler(unsigned int msg_type, void* user);
-    bool setPixelType(std::span<unsigned int> supported_types);
+    bool setPixelFormat(std::span<unsigned int> supported_types);
+    std::span<unsigned int> getSupportedPixelFormats();
     void convertPixelFormat(cv::Mat& image, PixelFormat format);
     void startDaemonThread();
     bool setResolutionInner();
@@ -141,17 +141,18 @@ class HikCamera : public ColorCamera {
     float exposure_;
     float gamma_;
     float gain_;
+    HikPixelFormat pixel_format_ = HikPixelFormat::Unknown;
     unsigned int grab_timeout_;
     bool auto_white_balance_;
     std::array<unsigned int, 3> balance_ratio_;
     void* handle_ = nullptr;
-    std::atomic_bool exception_flag_ = false;
+    std::atomic_bool exception_occurred_ = false;
     std::unique_ptr<MV_FRAME_OUT> frame_out_ = nullptr;
     std::unique_ptr<MV_CC_DEVICE_INFO> device_info_ = nullptr;
-    PixelType pixel_type_ = PixelType::Unknown;
     mutable std::shared_mutex mutex_;
+    std::unique_ptr<MVCC_ENUMVALUE> supported_pixel_formats_;
     static std::shared_ptr<MV_CC_DEVICE_INFO_LIST> device_info_list_;
-    static std::once_flag device_info_list_init_flag_;
+    static std::once_flag is_device_info_list_init_;
     std::jthread daemon_thread_;
 };
 

@@ -15,4 +15,5 @@ target_link_libraries(driver PUBLIC
     ${OpenCV_LIBS}
     ${Hikvision_LIBS}
     spdlog::spdlog
+    magic_enum::magic_enum
 )

@@ -138,13 +138,13 @@ class Camera {
      * @brief Checks if the camera is currently open.
      * @return True if the camera is open, false otherwise.
      */
-    virtual bool isOpen() const = 0;
+    bool isOpen() const { return is_open_; };
 
     /**
      * @brief Checks if the camera is currently capturing.
      * @return True if the camera is capturing, false otherwise.
      */
-    virtual bool isCapturing() const = 0;
+    bool isCapturing() const { return is_capturing_; };
 
    protected:
     std::atomic_bool is_open_ =

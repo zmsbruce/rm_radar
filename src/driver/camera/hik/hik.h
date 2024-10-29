@@ -80,32 +80,32 @@ class HikCamera : public ColorCamera {
     /**
      * @brief Enum class representing the white balance auto mode.
      */
-    enum class BalanceWhiteAuto { Off = 0, Continuous = 1, Once = 2 };
+    enum class HikBalanceWhiteAuto { Off = 0, Continuous = 1, Once = 2 };
 
     /**
      * @brief Enum class representing the exposure auto mode.
      */
-    enum class ExposureAuto { Off = 0, Once = 1, Continuous = 2 };
+    enum class HikExposureAuto { Off = 0, Once = 1, Continuous = 2 };
 
     /**
      * @brief Enum class representing the gamma selection mode.
      */
-    enum class GammaSelector { User = 1, sRGB = 2 };
+    enum class HikGammaSelector { User = 1, sRGB = 2 };
 
     /**
      * @brief Enum class representing the gain auto mode.
      */
-    enum class GainAuto { Off = 0, Once = 1, Continuous = 2 };
+    enum class HikGainAuto { Off = 0, Once = 1, Continuous = 2 };
 
     /**
      * @brief Enum class representing the white balance ratio selector.
      */
-    enum class BalanceRatioSelector { Red = 0, Green = 1, Blue = 2 };
+    enum class HikBalanceRatioSelector { Red = 0, Green = 1, Blue = 2 };
 
     /**
      * @brief Enum class representing the trigger mode.
      */
-    enum class TriggerMode { Off = 0, On = 1 };
+    enum class HikTriggerMode { Off = 0, On = 1 };
 
     /**
      * @brief Enum class representing different pixel types supported by the

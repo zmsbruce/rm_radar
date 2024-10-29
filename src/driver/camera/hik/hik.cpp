@@ -661,11 +661,11 @@ bool HikCamera::setBalanceRatioInner() {
     if (auto_white_balance_) {
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
-            static_cast<unsigned int>(BalanceWhiteAuto::Continuous));
+            static_cast<unsigned int>(HikBalanceWhiteAuto::Continuous));
     } else {
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceWhiteAuto,
-                              "set balance white auto", handle_,
-                              static_cast<unsigned int>(BalanceWhiteAuto::Off));
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
+            static_cast<unsigned int>(HikBalanceWhiteAuto::Off));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioRed, "set balance ratio red",
                               handle_, balance_ratio_[0]);
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioGreen,
@@ -686,13 +686,13 @@ bool HikCamera::setExposureInner() {
     if (exposure_ > 0) {
         HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureAutoMode, "set exposure auto",
                               handle_,
-                              static_cast<unsigned int>(ExposureAuto::Off));
+                              static_cast<unsigned int>(HikExposureAuto::Off));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureTime, "set exposure time",
                               handle_, exposure_);
     } else {
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
-            static_cast<unsigned int>(ExposureAuto::Continuous));
+            static_cast<unsigned int>(HikExposureAuto::Continuous));
     }
     return true;
 }
@@ -705,9 +705,9 @@ bool HikCamera::setGammaInner() {
     if (gamma_ > 0.0f) {
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable", handle_,
                               "GammaEnable", true);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetGammaSelector, "set gamma selector",
-                              handle_,
-                              static_cast<unsigned int>(GammaSelector::User));
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetGammaSelector, "set gamma selector", handle_,
+            static_cast<unsigned int>(HikGammaSelector::User));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGamma, "set gamma", handle_, gamma_);
     }
     return true;
@@ -720,11 +720,12 @@ bool HikCamera::setGammaInner() {
 bool HikCamera::setGainInner() {
     if (gain_ > 0) {
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
-                              static_cast<unsigned int>(GainAuto::Off));
+                              static_cast<unsigned int>(HikGainAuto::Off));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGain, "set gain", handle_, gain_);
     } else {
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
-                              static_cast<unsigned int>(GainAuto::Continuous));
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetGainMode, "set gain auto", handle_,
+            static_cast<unsigned int>(HikGainAuto::Continuous));
     }
     return true;
 }

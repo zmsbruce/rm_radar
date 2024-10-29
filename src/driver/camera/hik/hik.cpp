@@ -14,7 +14,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include <magic_enum/magic_enum_all.hpp>
+#include <magic_enum/magic_enum.hpp>
 #include <stdexcept>
 #include <vector>
 
@@ -347,7 +347,7 @@ bool HikCamera::stopCapture() {
         spdlog::debug("Camera {} marked as not capturing.", camera_sn_);
     }
 
-    spdlog::info("Capture stopped successfully on camera {}.", camera_sn_);
+    spdlog::debug("Capture stopped successfully on camera {}.", camera_sn_);
     return true;
 }
 
@@ -370,34 +370,31 @@ bool HikCamera::grabImage(cv::Mat& image,
 
     // Acquire lock to ensure thread-safe access to camera resources
     spdlog::trace("Acquiring lock to grab image from camera {}.", camera_sn_);
-    {
-        std::unique_lock lock(mutex_);
-        spdlog::debug("Lock acquired for grabbing image from camera {}.",
-                      camera_sn_);
 
-        // Clear the frame output buffer before grabbing a new image
-        spdlog::trace("Clearing frame output buffer for camera {}.",
-                      camera_sn_);
-        std::memset(frame_out_.get(), 0, sizeof(MV_FRAME_OUT));
+    std::unique_lock lock(mutex_);
+    spdlog::debug("Lock acquired for grabbing image from camera {}.",
+                  camera_sn_);
 
-        // Attempt to get the image buffer from the camera
-        spdlog::trace("Calling MV_CC_GetImageBuffer for camera {}.",
-                      camera_sn_);
-        HIK_CHECK_RETURN_BOOL(MV_CC_GetImageBuffer, "get image buffer", handle_,
-                              frame_out_.get(), grab_timeout_);
-        spdlog::debug("Image buffer retrieved successfully for camera {}.",
-                      camera_sn_);
-    }
+    // Clear the frame output buffer before grabbing a new image
+    spdlog::trace("Clearing frame output buffer for camera {}.", camera_sn_);
+    std::memset(frame_out_.get(), 0, sizeof(MV_FRAME_OUT));
+
+    // Attempt to get the image buffer from the camera
+    spdlog::trace("Calling MV_CC_GetImageBuffer for camera {}.", camera_sn_);
+    HIK_CHECK_RETURN_BOOL(MV_CC_GetImageBuffer, "get image buffer", handle_,
+                          frame_out_.get(), grab_timeout_);
+    spdlog::debug("Image buffer retrieved successfully for camera {}.",
+                  camera_sn_);
 
     // Convert the buffer to a cv::Mat object
     spdlog::trace("Converting frame buffer to cv::Mat for camera {}.",
                   camera_sn_);
-    image =
+    cv::Mat temp_image =
         cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
                 CV_8UC3, frame_out_->pBufAddr);
 
     // Check if the image is valid (not empty)
-    if (image.empty()) {
+    if (temp_image.empty()) {
         spdlog::error("Failed to grab image from camera {}: image is empty.",
                       camera_sn_);
         return false;
@@ -407,8 +404,20 @@ bool HikCamera::grabImage(cv::Mat& image,
 
     // Convert the pixel format as needed
     spdlog::trace("Converting pixel format for camera {}.", camera_sn_);
-    convertPixelFormat(image, pixel_format);
+    image = convertPixelFormat(temp_image, pixel_format);
+    if (image.empty()) {
+        spdlog::error("Failed to convert image from camera {}: image is empty.",
+                      camera_sn_);
+        return false;
+    }
     spdlog::debug("Pixel format conversion completed for camera {}.",
+                  camera_sn_);
+
+    // Free the frame output buffer after image convertion completed
+    spdlog::trace("Calling MV_CC_FreeImageBuffer for camera {}.", camera_sn_);
+    HIK_CHECK_RETURN_BOOL(MV_CC_FreeImageBuffer, "free image buffer", handle_,
+                          frame_out_.get());
+    spdlog::debug("Image buffer released successfully for camera {}.",
                   camera_sn_);
 
     spdlog::trace("Image grabbed successfully from camera {}.", camera_sn_);
@@ -449,13 +458,12 @@ bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
         HikPixelFormat::YUV422_8_UYVY,
     };
 
-    spdlog::trace("Supported pixel formats for camera {}: [{}]", camera_sn_,
+    spdlog::trace("Supported pixel formats for camera {}: [{:#x}]", camera_sn_,
                   fmt::join(supported_formats, ", "));
 
     if (std::ranges::any_of(
             supported_formats, [this](unsigned int supported_type) {
-                return static_cast<unsigned int>(pixel_format_) ==
-                       supported_type;
+                return getPixelFormatValue(pixel_format_) == supported_type;
             })) {
         return true;
     } else if (pixel_format_ != HikPixelFormat::Unknown) {
@@ -467,12 +475,12 @@ bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
 
     // Iterate over candidate formats and check if any are supported
     for (auto type : candidate_formats) {
-        spdlog::trace("Checking if pixel format {} is supported.",
-                      static_cast<unsigned int>(type));
+        spdlog::trace("Checking if pixel format {}: {:#x} is supported.",
+                      magic_enum::enum_name(type), getPixelFormatValue(type));
 
         if (std::ranges::any_of(
                 supported_formats, [type](unsigned int supported_type) {
-                    return static_cast<unsigned int>(type) == supported_type;
+                    return getPixelFormatValue(type) == supported_type;
                 })) {
             pixel_format_ = type;
             spdlog::debug("Pixel format {} selected for camera {}.",
@@ -494,7 +502,7 @@ bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
     spdlog::trace("Setting pixel format to {} for camera {}.",
                   magic_enum::enum_name(pixel_format_), camera_sn_);
     HIK_CHECK_RETURN_BOOL(MV_CC_SetPixelFormat, "set pixel format", handle_,
-                          static_cast<unsigned int>(pixel_format_));
+                          getPixelFormatValue(pixel_format_));
 
     spdlog::info("Pixel format set successfully to {} for camera {}.",
                  magic_enum::enum_name(pixel_format_), camera_sn_);
@@ -517,6 +525,10 @@ std::pair<int, int> HikCamera::getResolution() const {
  * @return True if the resolution was set successfully, false otherwise.
  */
 bool HikCamera::setResolution(int width, int height) {
+    if (isCapturing()) {
+        spdlog::error("Setting resolution is not supported when capturing.");
+        return false;
+    }
     std::unique_lock lock(mutex_);
     width_ = width;
     height_ = height;
@@ -854,41 +866,46 @@ std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
  * @brief Converts the pixel format of an image.
  * @param image The image to convert.
  * @param format The desired pixel format.
+ * @return The image converted.
  */
-void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
+cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
+                                      PixelFormat format) {
     spdlog::debug("Starting pixel format conversion from {} to {}",
-                  static_cast<int>(pixel_format_), static_cast<int>(format));
-
+                  magic_enum::enum_name(pixel_format_),
+                  magic_enum::enum_name(format));
+    cv::Mat output_image;
     switch (pixel_format_) {
         case HikPixelFormat::RGB8Packed:
             spdlog::trace("Handling HikPixelFormat::RGB8Packed");
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from RGB to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2GRAY);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2GRAY);
                     break;
                 case PixelFormat::RGB:
-                    spdlog::debug("No conversion needed, format already RGB");
+                    spdlog::debug(
+                        "No conversion needed for RGB, will clone image");
+                    output_image = input_image.clone();
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from RGB to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2BGR);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from RGB to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2RGBA);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2RGBA);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from RGB to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2BGRA);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2BGRA);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from RGB to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2HSV);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from RGB to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_RGB2YUV);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_RGB2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for RGB8Packed");
@@ -901,33 +918,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from BayerBG to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2GRAY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2GRAY);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from BayerBG to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2BGR);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from BayerBG to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2RGB);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2RGB);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from BayerBG to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGRA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2BGRA);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from BayerBG to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2RGBA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2RGBA);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from BayerBG to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from BayerBG to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerBG2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerBG2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for BayerBG8");
@@ -940,33 +964,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from BayerGB to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2GRAY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2GRAY);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from BayerGB to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2BGR);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from BayerGB to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2RGB);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2RGB);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from BayerGB to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGRA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2BGRA);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from BayerGB to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2RGBA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2RGBA);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from BayerGB to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from BayerGB to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGB2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGB2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for BayerGB8");
@@ -979,33 +1010,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from BayerGR to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2GRAY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2GRAY);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from BayerGR to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2BGR);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from BayerGR to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2RGB);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2RGB);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from BayerGR to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGRA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2BGRA);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from BayerGR to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2RGBA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2RGBA);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from BayerGR to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from BayerGR to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerGR2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerGR2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for BayerGR8");
@@ -1018,33 +1056,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from BayerRG to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2GRAY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2GRAY);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from BayerRG to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2BGR);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from BayerRG to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2RGB);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2RGB);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from BayerRG to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGRA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2BGRA);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from BayerRG to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2RGBA);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2RGBA);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from BayerRG to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from BayerRG to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_BayerRG2BGR);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_BayerRG2BGR);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for BayerRG8");
@@ -1057,33 +1102,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from YUV422 to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_YUYV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2GRAY_YUYV);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from YUV422 to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_YUYV);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from YUV422 to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2RGB_YUYV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2RGB_YUYV);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from YUV422 to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGRA_YUYV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGRA_YUYV);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from YUV422 to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2RGBA_YUYV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2RGBA_YUYV);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from YUV422 to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_YUYV);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from YUV422 to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_YUYV);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_YUYV);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for YUV422_8");
@@ -1096,33 +1148,40 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from YUV422_UYVY to GRAY");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2GRAY_UYVY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2GRAY_UYVY);
                     break;
                 case PixelFormat::BGR:
                     spdlog::debug("Converting from YUV422_UYVY to BGR");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_UYVY);
                     break;
                 case PixelFormat::RGB:
                     spdlog::debug("Converting from YUV422_UYVY to RGB");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2RGB_UYVY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2RGB_UYVY);
                     break;
                 case PixelFormat::BGRA:
                     spdlog::debug("Converting from YUV422_UYVY to BGRA");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGRA_UYVY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGRA_UYVY);
                     break;
                 case PixelFormat::RGBA:
                     spdlog::debug("Converting from YUV422_UYVY to RGBA");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2RGBA_UYVY);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2RGBA_UYVY);
                     break;
                 case PixelFormat::HSV:
                     spdlog::debug("Converting from YUV422_UYVY to HSV");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2HSV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_UYVY);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
                     break;
                 case PixelFormat::YUV:
                     spdlog::debug("Converting from YUV422_UYVY to YUV");
-                    cv::cvtColor(image, image, cv::COLOR_YUV2BGR_UYVY);
-                    cv::cvtColor(image, image, cv::COLOR_BGR2YUV);
+                    cv::cvtColor(input_image, output_image,
+                                 cv::COLOR_YUV2BGR_UYVY);
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
                     spdlog::error("Invalid target format for YUV422_8_UYVY");
@@ -1136,6 +1195,28 @@ void HikCamera::convertPixelFormat(cv::Mat& image, PixelFormat format) {
     }
 
     spdlog::debug("Pixel format conversion completed");
+    return output_image;
+}
+
+unsigned int HikCamera::getPixelFormatValue(HikPixelFormat format) {
+    switch (format) {
+        case HikPixelFormat::RGB8Packed:
+            return 0x02180014;
+        case HikPixelFormat::YUV422_8:
+            return 0x02100032;
+        case HikPixelFormat::YUV422_8_UYVY:
+            return 0x0210001F;
+        case HikPixelFormat::BayerGR8:
+            return 0x01080008;
+        case HikPixelFormat::BayerRG8:
+            return 0x01080009;
+        case HikPixelFormat::BayerGB8:
+            return 0x0108000A;
+        case HikPixelFormat::BayerBG8:
+            return 0x0108000B;
+        default:
+            return 0x0;
+    }
 }
 
 }  // namespace radar::camera

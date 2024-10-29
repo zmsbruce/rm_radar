@@ -51,7 +51,7 @@ class HikCamera : public ColorCamera {
     HikCamera(std::string_view camera_sn, unsigned int width,
               unsigned int height, float exposure, float gamma, float gain,
               std::string_view pixel_format = "default",
-              unsigned int grab_timeout = 1000, bool auto_white_balance = true,
+              unsigned int grab_timeout = 2000, bool auto_white_balance = true,
               std::array<unsigned int, 3>&& balance_ratio = {0, 0, 0});
     ~HikCamera() override;
     bool open() override;
@@ -112,22 +112,23 @@ class HikCamera : public ColorCamera {
      * camera.
      */
     enum class HikPixelFormat {
-        Unknown = 0x0,               ///< Unknown pixel type.
-        RGB8Packed = 0x02180014,     ///< RGB 8-bit packed pixel format.
-        YUV422_8 = 0x02100032,       ///< YUV 4:2:2 8-bit format.
-        YUV422_8_UYVY = 0x0210001F,  ///< YUV 4:2:2 8-bit UYVY format.
-        BayerGR8 = 0x01080008,       ///< Bayer GR 8-bit format.
-        BayerRG8 = 0x01080009,       ///< Bayer RG 8-bit format.
-        BayerGB8 = 0x0108000A,       ///< Bayer GB 8-bit format.
-        BayerBG8 = 0x0108000B        ///< Bayer BG 8-bit format.
+        Unknown,        // 0x0
+        RGB8Packed,     // 0x02180014
+        YUV422_8,       // 0x02100032
+        YUV422_8_UYVY,  // 0x0210001F
+        BayerGR8,       // 0x01080008
+        BayerRG8,       // 0x01080009
+        BayerGB8,       // 0x0108000A
+        BayerBG8        // 0x0108000B
     };
 
     static std::span<MV_CC_DEVICE_INFO*> getDeviceInfoList();
     static std::string getCameraInfo(MV_CC_DEVICE_INFO* device_info);
     static void exceptionHandler(unsigned int msg_type, void* user);
+    static unsigned int getPixelFormatValue(HikPixelFormat format);
     bool setPixelFormat(std::span<unsigned int> supported_types);
     std::span<unsigned int> getSupportedPixelFormats();
-    void convertPixelFormat(cv::Mat& image, PixelFormat format);
+    cv::Mat convertPixelFormat(const cv::Mat& image, PixelFormat format);
     void startDaemonThread();
     bool setResolutionInner();
     bool setBalanceRatioInner();
@@ -151,8 +152,8 @@ class HikCamera : public ColorCamera {
     std::unique_ptr<MV_CC_DEVICE_INFO> device_info_ = nullptr;
     mutable std::shared_mutex mutex_;
     std::unique_ptr<MVCC_ENUMVALUE> supported_pixel_formats_;
-    static std::shared_ptr<MV_CC_DEVICE_INFO_LIST> device_info_list_;
-    static std::once_flag is_device_info_list_init_;
+    inline static std::shared_ptr<MV_CC_DEVICE_INFO_LIST> device_info_list_;
+    inline static std::once_flag is_device_info_list_init_;
     std::jthread daemon_thread_;
 };
 

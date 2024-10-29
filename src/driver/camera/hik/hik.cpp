@@ -515,6 +515,8 @@ bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
  */
 std::pair<int, int> HikCamera::getResolution() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Getting resolution: {}x{} (width x height).", width_,
+                  height_);
     return std::make_pair(width_, height_);
 }
 
@@ -525,6 +527,7 @@ std::pair<int, int> HikCamera::getResolution() const {
  * @return True if the resolution was set successfully, false otherwise.
  */
 bool HikCamera::setResolution(int width, int height) {
+    spdlog::trace("Entering setResolution() for camera {}", camera_sn_);
     if (isCapturing()) {
         spdlog::error("Setting resolution is not supported when capturing.");
         return false;
@@ -541,6 +544,7 @@ bool HikCamera::setResolution(int width, int height) {
  */
 float HikCamera::getGain() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Getting gain value: {}.", gain_);
     return gain_;
 }
 
@@ -550,6 +554,7 @@ float HikCamera::getGain() const {
  * @return True if the gain was set successfully, false otherwise.
  */
 bool HikCamera::setGain(float gain) {
+    spdlog::trace("Entering setGain() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
     gain_ = gain;
     return setGainInner();
@@ -561,6 +566,7 @@ bool HikCamera::setGain(float gain) {
  */
 int HikCamera::getExposureTime() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Getting exposure time: {} μs.", static_cast<int>(exposure_));
     return static_cast<int>(exposure_);
 }
 
@@ -570,6 +576,7 @@ int HikCamera::getExposureTime() const {
  * @return True if the exposure time was set successfully, false otherwise.
  */
 bool HikCamera::setExposureTime(int exposure) {
+    spdlog::trace("Entering setExposureTime() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
     exposure_ = exposure;
     return setExposureInner();
@@ -581,6 +588,8 @@ bool HikCamera::setExposureTime(int exposure) {
  */
 std::array<unsigned int, 3> HikCamera::getBalanceRatio() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Getting balance ratio: Red = {}, Green = {}, Blue = {}.",
+                  balance_ratio_[0], balance_ratio_[1], balance_ratio_[2]);
     return balance_ratio_;
 }
 
@@ -590,6 +599,7 @@ std::array<unsigned int, 3> HikCamera::getBalanceRatio() const {
  * @return True if the balance ratio was set successfully, false otherwise.
  */
 bool HikCamera::setBalanceRatio(std::array<unsigned int, 3>&& balance) {
+    spdlog::trace("Entering setBalanceRatio() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
     balance_ratio_ = balance;
     return setBalanceRatioInner();
@@ -611,6 +621,7 @@ bool HikCamera::getBalanceRatioAuto() const {
  * false otherwise.
  */
 bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
+    spdlog::trace("Entering setBalanceRatioAuto() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
     auto_white_balance_ = balance_auto;
     return setBalanceRatioInner();
@@ -622,6 +633,7 @@ bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
  */
 std::string HikCamera::getCameraSn() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Getting camera serial number: {}.", camera_sn_);
     return camera_sn_;
 }
 
@@ -635,8 +647,16 @@ bool HikCamera::setResolutionInner() {
     std::memset(&width, 0, sizeof(MVCC_INTVALUE));
     std::memset(&height, 0, sizeof(MVCC_INTVALUE));
 
+    spdlog::trace("Entering setResolutionInner()");
+
     HIK_CHECK_NORETURN(MV_CC_GetWidth, "get width", handle_, &width);
     HIK_CHECK_NORETURN(MV_CC_GetHeight, "get width", handle_, &height);
+
+    spdlog::debug("Current width limits: nMin = {}, nMax = {}, nInc = {}",
+                  width.nMin, width.nMax, width.nInc);
+    spdlog::debug("Current height limits: nMin = {}, nMax = {}, nInc = {}",
+                  height.nMin, height.nMax, height.nInc);
+
     if (width.nMax != 0 || height.nMax != 0) {
         if (width_ < width.nMin || width_ > width.nMax ||
             height_ < height.nMin || height_ > height.nMax) {
@@ -647,6 +667,10 @@ bool HikCamera::setResolutionInner() {
                 height.nMax);
             return false;
         }
+
+        spdlog::info("Valid resolution {}x{} within required range.", width_,
+                     height_);
+
         if (width_ % width.nInc != 0) {
             auto width_old = width_;
             width_ = (width_ / width.nInc + 1) * width.nInc;
@@ -656,6 +680,7 @@ bool HikCamera::setResolutionInner() {
             spdlog::warn("Width should be times of {}, fixed from {} to {}.",
                          width.nInc, width_old, width_);
         }
+
         if (height_ % height.nInc != 0) {
             auto height_old = height_;
             height_ = (height_ / height.nInc + 1) * height.nInc;
@@ -667,9 +692,14 @@ bool HikCamera::setResolutionInner() {
         }
     }
 
-    // TODO: Check whether width changes when height changes (and vice versa)
+    spdlog::debug("Setting final resolution: {}x{}", width_, height_);
+
     HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width_);
     HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_, height_);
+
+    spdlog::info("Resolution set successfully: {}x{}", width_, height_);
+    spdlog::trace("Exiting setResolutionInner()");
+
     return true;
 }
 
@@ -679,14 +709,22 @@ bool HikCamera::setResolutionInner() {
  * otherwise.
  */
 bool HikCamera::setBalanceRatioInner() {
+    spdlog::trace("Entering setBalanceRatioInner()");
+
     if (auto_white_balance_) {
+        spdlog::info("Setting auto white balance to Continuous mode.");
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
             static_cast<unsigned int>(HikBalanceWhiteAuto::Continuous));
     } else {
+        spdlog::info("Setting auto white balance to Off mode.");
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
             static_cast<unsigned int>(HikBalanceWhiteAuto::Off));
+
+        spdlog::info(
+            "Setting manual balance ratios: Red = {}, Green = {}, Blue = {}.",
+            balance_ratio_[0], balance_ratio_[1], balance_ratio_[2]);
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioRed, "set balance ratio red",
                               handle_, balance_ratio_[0]);
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioGreen,
@@ -696,6 +734,9 @@ bool HikCamera::setBalanceRatioInner() {
                               "set balance ratio blue", handle_,
                               balance_ratio_[2]);
     }
+
+    spdlog::info("Balance ratio set successfully.");
+    spdlog::trace("Exiting setBalanceRatioInner()");
     return true;
 }
 
@@ -704,17 +745,26 @@ bool HikCamera::setBalanceRatioInner() {
  * @return True if the exposure value was set successfully, false otherwise.
  */
 bool HikCamera::setExposureInner() {
+    spdlog::trace("Entering setExposureInner()");
+
     if (exposure_ > 0) {
+        spdlog::info("Setting manual exposure with exposure time: {} μs.",
+                     exposure_);
         HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureAutoMode, "set exposure auto",
                               handle_,
                               static_cast<unsigned int>(HikExposureAuto::Off));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureTime, "set exposure time",
                               handle_, exposure_);
     } else {
+        spdlog::info("Setting auto exposure mode.");
+
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
             static_cast<unsigned int>(HikExposureAuto::Continuous));
     }
+
+    spdlog::info("Exposure setting applied successfully.");
+    spdlog::trace("Exiting setExposureInner()");
     return true;
 }
 
@@ -723,14 +773,23 @@ bool HikCamera::setExposureInner() {
  * @return True if the gamma value was set successfully, false otherwise.
  */
 bool HikCamera::setGammaInner() {
+    spdlog::trace("Entering setGammaInner()");
+
     if (gamma_ > 0.0f) {
+        spdlog::info("Enabling gamma correction with gamma value: {}.", gamma_);
         HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable", handle_,
                               "GammaEnable", true);
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetGammaSelector, "set gamma selector", handle_,
             static_cast<unsigned int>(HikGammaSelector::User));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGamma, "set gamma", handle_, gamma_);
+    } else {
+        spdlog::info(
+            "Gamma correction is not enabled since gamma value is <= 0.");
     }
+
+    spdlog::info("Gamma setting applied successfully.");
+    spdlog::trace("Exiting setGammaInner()");
     return true;
 }
 
@@ -739,15 +798,23 @@ bool HikCamera::setGammaInner() {
  * @return True if the gain value was set successfully, false otherwise.
  */
 bool HikCamera::setGainInner() {
+    spdlog::trace("Entering setGainInner()");
+
     if (gain_ > 0) {
+        spdlog::info("Setting manual gain with gain value: {}.", gain_);
+
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
                               static_cast<unsigned int>(HikGainAuto::Off));
         HIK_CHECK_RETURN_BOOL(MV_CC_SetGain, "set gain", handle_, gain_);
     } else {
+        spdlog::info("Setting auto gain mode.");
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetGainMode, "set gain auto", handle_,
             static_cast<unsigned int>(HikGainAuto::Continuous));
     }
+
+    spdlog::info("Gain setting applied successfully.");
+    spdlog::trace("Exiting setGainInner()");
     return true;
 }
 
@@ -756,6 +823,7 @@ bool HikCamera::setGainInner() {
  * @param occurred New value for the exception flag.
  */
 void HikCamera::setExceptionOccurred(bool occurred) {
+    spdlog::info("Setting exception occurred state to: {}.", occurred);
     exception_occurred_ = occurred;
 }
 
@@ -763,7 +831,11 @@ void HikCamera::setExceptionOccurred(bool occurred) {
  * @brief Gets the current value of the exception flag.
  * @return True if an exception has occurred, false otherwise.
  */
-bool HikCamera::isExceptionOccurred() const { return exception_occurred_; }
+bool HikCamera::isExceptionOccurred() const {
+    spdlog::debug("Checking if exception occurred: {}.",
+                  exception_occurred_.load());
+    return exception_occurred_;
+}
 
 /**
  * @brief Gets camera information from a device info structure.
@@ -793,6 +865,7 @@ std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
  */
 std::string HikCamera::getCameraInfo() const {
     std::shared_lock lock(mutex_);
+    spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
     return HikCamera::getCameraInfo(device_info_.get());
 }
 
@@ -802,6 +875,7 @@ std::string HikCamera::getCameraInfo() const {
  * @param user Pointer to the user-defined data (in this case, the camera).
  */
 void HikCamera::exceptionHandler(unsigned int code, void* user) {
+    spdlog::trace("Reaching exception handler.");
     auto camera = static_cast<HikCamera*>(user);
     spdlog::error("Exception occurred in HikCamera {}: code {}",
                   camera->getCameraSn(), code);

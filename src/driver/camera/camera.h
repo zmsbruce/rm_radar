@@ -159,13 +159,10 @@ class Camera {
 class ColorCamera : public Camera {
    public:
     /**
-     * @brief Sets whether the automatic white balance (balance ratio) is
-     * enabled.
-     * @param[in] balance_auto Set to true to enable automatic balance ratio,
-     * false to disable.
+     * @brief Enables automatic white balance (balance ratio).
      * @return True if successfully set, false otherwise.
      */
-    virtual bool setBalanceRatioAuto(bool balance_auto) = 0;
+    virtual bool setBalanceRatioAuto() = 0;
 
     /**
      * @brief Checks whether the automatic white balance (balance ratio) is
@@ -185,12 +182,14 @@ class ColorCamera : public Camera {
     /**
      * @brief Sets the white balance ratio for the red, green, and blue
      * channels.
-     * @param[in] balance An array containing the balance ratio for the red,
-     * green, and blue channels.
+     * @param[in] red Balance ratio for the red.
+     * @param[in] green Balance ratio for the green.
+     * @param[in] blue Balance ratio for the blue.
      * @return True if the balance ratios were successfully set, false
      * otherwise.
      */
-    virtual bool setBalanceRatio(std::array<unsigned int, 3>&& balance) = 0;
+    virtual bool setBalanceRatio(unsigned int red, unsigned int green,
+                                 unsigned int blue) = 0;
 };
 
 }  // namespace radar::camera

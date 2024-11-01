@@ -18,68 +18,55 @@
 #include <stdexcept>
 #include <vector>
 
-#define HIK_CHECK_RETURN_BOOL(func, msg, ...)                     \
-    do {                                                          \
-        int ret = func(__VA_ARGS__);                              \
-        if (MV_OK != ret) {                                       \
-            spdlog::error("Failed to {}, error code: {:#x}", msg, \
-                          static_cast<unsigned int>(ret));        \
-            return false;                                         \
-        }                                                         \
-    } while (0)
-
-#define HIK_CHECK_NORETURN(func, msg, ...)                        \
-    do {                                                          \
-        int ret = func(__VA_ARGS__);                              \
-        if (MV_OK != ret) {                                       \
-            spdlog::error("Failed to {}, error code: {:#x}", msg, \
-                          static_cast<unsigned int>(ret));        \
-        }                                                         \
-    } while (0)
-
 namespace radar::camera {
 
-/**
- * @brief Constructor for HikCamera.
- * @param camera_sn Camera serial number.
- * @param width Camera resolution width.
- * @param height Camera resolution height.
- * @param exposure Camera exposure time.
- * @param gamma Gamma correction value.
- * @param gain Gain value.
- * @param pixel_format Camera pixel format.
- * @param grab_timeout Timeout for grabbing an image.
- * @param auto_white_balance Whether auto white balance is enabled.
- * @param balance_ratio White balance ratio for RGB channels.
- */
-HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
-                     unsigned int height, float exposure, float gamma,
-                     float gain, std::string_view pixel_format,
-                     unsigned int grab_timeout, bool auto_white_balance,
-                     std::array<unsigned int, 3>&& balance_ratio)
-    : camera_sn_{camera_sn},
-      width_{width},
-      height_{height},
-      exposure_{exposure},
-      gamma_{gamma},
-      gain_{gain},
-      pixel_format_{magic_enum::enum_cast<HikPixelFormat>(pixel_format)
-                        .value_or(HikPixelFormat::Unknown)},
-      grab_timeout_{grab_timeout},
-      auto_white_balance_{auto_white_balance},
-      balance_ratio_{balance_ratio},
+HikCamera::HikCamera(
+    std::string_view camera_sn,
+    std::optional<std::pair<unsigned int, unsigned int>> resolution,
+    std::optional<float> exposure, std::optional<float> gamma,
+    std::optional<float> gain, std::optional<std::string_view> pixel_format,
+    std::optional<std::array<unsigned int, 3>> balance_ratio,
+    unsigned int grab_timeout)
+    : camera_sn_(camera_sn),
+      resolution_(resolution),
+      exposure_(exposure),
+      gamma_(gamma),
+      gain_(gain),
+      pixel_format_(
+          magic_enum::enum_cast<HikPixelFormat>(pixel_format.value_or(""))
+              .value_or(HikPixelFormat::Unknown)),
+      grab_timeout_(grab_timeout),
+      balance_ratio_(balance_ratio),
       frame_out_{std::make_unique<MV_FRAME_OUT>()},
       device_info_{std::make_unique<MV_CC_DEVICE_INFO>()},
       supported_pixel_formats_{std::make_unique<MVCC_ENUMVALUE>()} {
     spdlog::trace("Initializing HikCamera with SN: {}", camera_sn);
-    spdlog::debug(
-        "Camera parameters: width={}, height={}, exposure={}, gamma={}, "
-        "gain={}, pixel_format: {} grab timeout: {}, auto white balance: {}, "
-        "balance ratio: "
-        "[{}, {}, {}]",
-        width, height, exposure, gamma, gain, pixel_format, grab_timeout,
-        auto_white_balance, balance_ratio[0], balance_ratio[1],
-        balance_ratio[2]);
+
+    if (spdlog::get_level() <= spdlog::level::debug) {
+        std::string resolution_str =
+            resolution
+                ? fmt::format("{}x{}", resolution->first, resolution->second)
+                : "null";
+
+        std::string exposure_str =
+            exposure ? fmt::format("{}", *exposure) : "null";
+        std::string gamma_str = gamma ? fmt::format("{}", *gamma) : "null";
+        std::string gain_str = gain ? fmt::format("{}", *gain) : "null";
+
+        std::string balance_ratio_str =
+            balance_ratio
+                ? fmt::format("[{}, {}, {}]", (*balance_ratio)[0],
+                              (*balance_ratio)[1], (*balance_ratio)[2])
+                : "null";
+
+        spdlog::debug(
+            "Camera parameters: resolution: {}, exposure: {}, gamma: {}, gain: "
+            "{}, "
+            "pixel_format: {}, grab timeout: {}, balance ratio: {}",
+            resolution_str, exposure_str, gamma_str, gain_str,
+            magic_enum::enum_name(pixel_format_), grab_timeout,
+            balance_ratio_str);
+    }
 
     // Initializing device info
     std::memset(device_info_.get(), 0, sizeof(MV_CC_DEVICE_INFO));
@@ -94,9 +81,6 @@ HikCamera::HikCamera(std::string_view camera_sn, unsigned int width,
     startDaemonThread();
 }
 
-/**
- * @brief Destructor for HikCamera.
- */
 HikCamera::~HikCamera() {
     spdlog::info("Destroying camera with serial number: {}", camera_sn_);
 
@@ -113,10 +97,6 @@ HikCamera::~HikCamera() {
     daemon_thread_.request_stop();
 }
 
-/**
- * @brief Opens the camera for use.
- * @return True if the camera was opened successfully, false otherwise.
- */
 bool HikCamera::open() {
     if (isOpen()) {
         spdlog::warn(
@@ -165,7 +145,7 @@ bool HikCamera::open() {
 
     // Set the pixel type based on supported formats
     spdlog::trace("Setting pixel type for camera {}.", camera_sn_);
-    if (!setPixelFormat(getSupportedPixelFormats())) {
+    if (!setPixelFormatInner()) {
         spdlog::critical("Failed to set pixel format for camera {}.",
                          camera_sn_);
         return false;
@@ -222,10 +202,6 @@ bool HikCamera::open() {
     return true;
 }
 
-/**
- * @brief Closes the camera.
- * @return True if the camera was closed successfully, false otherwise.
- */
 void HikCamera::close() {
     spdlog::info("Closing camera with serial number: {}", camera_sn_);
 
@@ -266,10 +242,6 @@ void HikCamera::close() {
     spdlog::info("Camera {} closed.", camera_sn_);
 }
 
-/**
- * @brief Reconnects the camera by closing and reopening it.
- * @return True if the camera was reconnected successfully, false otherwise.
- */
 bool HikCamera::reconnect() {
     spdlog::warn("Reconnecting camera with serial number: {}", camera_sn_);
 
@@ -290,10 +262,6 @@ bool HikCamera::reconnect() {
     }
 }
 
-/**
- * @brief Starts capturing images from the camera.
- * @return True if capturing started successfully, false otherwise.
- */
 bool HikCamera::startCapture() {
     spdlog::trace(
         "Attempting to start capture on camera with serial number: {}",
@@ -321,10 +289,6 @@ bool HikCamera::startCapture() {
     return true;
 }
 
-/**
- * @brief Stops capturing images from the camera.
- * @return True if capturing stopped successfully, false otherwise.
- */
 bool HikCamera::stopCapture() {
     spdlog::trace("Attempting to stop capture on camera with serial number: {}",
                   camera_sn_);
@@ -351,12 +315,6 @@ bool HikCamera::stopCapture() {
     return true;
 }
 
-/**
- * @brief Grabs an image from the camera.
- * @param image Output cv::Mat containing the image.
- * @param pixel_format Desired pixel format for the image.
- * @return True if the image was grabbed successfully, false otherwise.
- */
 bool HikCamera::grabImage(cv::Mat& image,
                           camera::PixelFormat pixel_format) noexcept {
     spdlog::debug("Attempting to grab image from camera with serial number: {}",
@@ -424,10 +382,6 @@ bool HikCamera::grabImage(cv::Mat& image,
     return true;
 }
 
-/**
- * @brief Gets all pixel formats supported for the camera.
- * @return Supported pixel formats.
- */
 std::span<unsigned int> HikCamera::getSupportedPixelFormats() {
     spdlog::trace("Getting supported pixel formats for camera {}.", camera_sn_);
     int ret = MV_CC_GetPixelFormat(handle_, supported_pixel_formats_.get());
@@ -443,20 +397,34 @@ std::span<unsigned int> HikCamera::getSupportedPixelFormats() {
     return supported_pixel_format;
 }
 
-/**
- * @brief Sets the pixel format for the camera.
- * @param supported_formats Span of supported pixel formats.
- * @return True if the pixel format was set successfully, false otherwise.
- */
-bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
+bool HikCamera::setPixelFormat(HikPixelFormat pixel_format) {
+    spdlog::trace("Entering setPixelFormat() for camera {}", camera_sn_);
+    if (isOpen()) {
+        spdlog::error(
+            "Setting pixel format is not supported when camera is not open.");
+        return false;
+    }
+    if (isCapturing()) {
+        spdlog::error("Setting pixel format is not supported when capturing.");
+        return false;
+    }
+
+    std::unique_lock lock(mutex_);
+    pixel_format_ = pixel_format;
+    return setPixelFormatInner();
+}
+
+bool HikCamera::setPixelFormatInner() {
     spdlog::debug("Attempting to set pixel format for camera {}.", camera_sn_);
 
     static const std::vector<HikPixelFormat> candidate_formats{
-        HikPixelFormat::RGB8Packed,    HikPixelFormat::BayerBG8,
-        HikPixelFormat::BayerGB8,      HikPixelFormat::BayerGR8,
-        HikPixelFormat::BayerRG8,      HikPixelFormat::YUV422_8,
-        HikPixelFormat::YUV422_8_UYVY,
+        HikPixelFormat::BGR8Packed, HikPixelFormat::RGB8Packed,
+        HikPixelFormat::BayerBG8,   HikPixelFormat::BayerGB8,
+        HikPixelFormat::BayerGR8,   HikPixelFormat::BayerRG8,
+        HikPixelFormat::YUV422_8,   HikPixelFormat::YUV422_8_UYVY,
     };
+
+    const auto supported_formats = getSupportedPixelFormats();
 
     spdlog::trace("Supported pixel formats for camera {}: [{:#x}]", camera_sn_,
                   fmt::join(supported_formats, ", "));
@@ -509,23 +477,31 @@ bool HikCamera::setPixelFormat(std::span<unsigned int> supported_formats) {
     return true;
 }
 
-/**
- * @brief Gets the camera's resolution.
- * @return A pair of integers representing the width and height.
- */
 std::pair<int, int> HikCamera::getResolution() const {
     std::shared_lock lock(mutex_);
-    spdlog::debug("Getting resolution: {}x{} (width x height).", width_,
-                  height_);
-    return std::make_pair(width_, height_);
+
+    if (!resolution_.has_value()) {
+        spdlog::trace("Resolution value is not set, will read from sdk.");
+        if (!isOpen()) {
+            spdlog::error("Camera is not open, cannot get resolution.");
+            return UNKNOWN_RESOLUTION;
+        }
+        MVCC_INTVALUE width, height;
+        if (MV_CC_GetWidth(handle_, &width) != MV_OK ||
+            MV_CC_GetHeight(handle_, &height) != MV_OK) {
+            spdlog::error("Failed to get resolution from sdk.");
+            return UNKNOWN_RESOLUTION;
+        }
+        spdlog::debug("Getting resolution value from sdk: {}x{}.",
+                      width.nCurValue, height.nCurValue);
+        return {width.nCurValue, height.nCurValue};
+    } else {
+        spdlog::debug("Getting resolution value directly: {}x{}.",
+                      resolution_.value().first, resolution_.value().second);
+        return {resolution_.value().first, resolution_.value().second};
+    }
 }
 
-/**
- * @brief Sets the camera's resolution.
- * @param width New width for the camera.
- * @param height New height for the camera.
- * @return True if the resolution was set successfully, false otherwise.
- */
 bool HikCamera::setResolution(int width, int height) {
     spdlog::trace("Entering setResolution() for camera {}", camera_sn_);
     if (isCapturing()) {
@@ -533,26 +509,31 @@ bool HikCamera::setResolution(int width, int height) {
         return false;
     }
     std::unique_lock lock(mutex_);
-    width_ = width;
-    height_ = height;
+    resolution_ = std::make_pair(width, height);
     return setResolutionInner();
 }
 
-/**
- * @brief Gets the current gain value.
- * @return The current gain value.
- */
 float HikCamera::getGain() const {
     std::shared_lock lock(mutex_);
-    spdlog::debug("Getting gain value: {}.", gain_);
-    return gain_;
+    if (!gain_.has_value()) {
+        spdlog::trace("Gain value is not set, will read from sdk.");
+        if (!isOpen()) {
+            spdlog::error("Camera is not open, cannot get gain.");
+            return UNKNOWN_GAIN;
+        }
+        MVCC_FLOATVALUE gain;
+        if (MV_CC_GetGain(handle_, &gain) != MV_OK) {
+            spdlog::error("Failed to get gain from sdk.");
+            return UNKNOWN_GAIN;
+        }
+        spdlog::debug("Getting gain value from sdk: {}.", gain.fCurValue);
+        return gain.fCurValue;
+    } else {
+        spdlog::debug("Getting gain value directly: {}.", gain_);
+        return gain_.value();
+    }
 }
 
-/**
- * @brief Sets the gain value for the camera.
- * @param gain New gain value.
- * @return True if the gain was set successfully, false otherwise.
- */
 bool HikCamera::setGain(float gain) {
     spdlog::trace("Entering setGain() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
@@ -560,21 +541,29 @@ bool HikCamera::setGain(float gain) {
     return setGainInner();
 }
 
-/**
- * @brief Gets the current exposure time.
- * @return The current exposure time.
- */
 int HikCamera::getExposureTime() const {
     std::shared_lock lock(mutex_);
-    spdlog::debug("Getting exposure time: {} μs.", static_cast<int>(exposure_));
-    return static_cast<int>(exposure_);
+    if (!exposure_.has_value()) {
+        spdlog::trace("Exposure value is not set, will read from sdk.");
+        if (!isOpen()) {
+            spdlog::error("Camera is not open, cannot get gain.");
+            return UNKNOWN_EXPOSURE;
+        }
+
+        MVCC_FLOATVALUE exposure;
+        if (MV_CC_GetExposureTime(handle_, &exposure) != MV_OK) {
+            spdlog::error("Failed to get exposure from sdk.");
+            return UNKNOWN_EXPOSURE;
+        }
+        spdlog::debug("Getting exposure time from sdk: {} μs.",
+                      exposure.fCurValue);
+        return exposure.fCurValue;
+    } else {
+        spdlog::debug("Getting exposure time directly: {} μs.", exposure_);
+        return static_cast<int>(exposure_.value());
+    }
 }
 
-/**
- * @brief Sets a new exposure time for the camera.
- * @param exposure New exposure time.
- * @return True if the exposure time was set successfully, false otherwise.
- */
 bool HikCamera::setExposureTime(int exposure) {
     spdlog::trace("Entering setExposureTime() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
@@ -582,266 +571,301 @@ bool HikCamera::setExposureTime(int exposure) {
     return setExposureInner();
 }
 
-/**
- * @brief Gets the current white balance ratio.
- * @return An array representing the white balance ratio for RGB channels.
- */
 std::array<unsigned int, 3> HikCamera::getBalanceRatio() const {
+    constexpr std::array<unsigned int, 3> UNKNOWN_BALANCE_RATIO{0, 0, 0};
+
     std::shared_lock lock(mutex_);
-    spdlog::debug("Getting balance ratio: Red = {}, Green = {}, Blue = {}.",
-                  balance_ratio_[0], balance_ratio_[1], balance_ratio_[2]);
-    return balance_ratio_;
+    if (!balance_ratio_.has_value()) {
+        spdlog::trace("Balance ratio is not set, will read from sdk.");
+        if (!isOpen()) {
+            spdlog::error("Camera is not open, cannot get gain.");
+            return UNKNOWN_BALANCE_RATIO;
+        }
+
+        MVCC_INTVALUE red, green, blue;
+        if (MV_CC_GetBalanceRatioRed(handle_, &red) != MV_OK ||
+            MV_CC_GetBalanceRatioGreen(handle_, &green) != MV_OK ||
+            MV_CC_GetBalanceRatioBlue(handle_, &blue) != MV_OK) {
+            spdlog::error("Failed to get balance ratio from sdk.");
+            return UNKNOWN_BALANCE_RATIO;
+        }
+        spdlog::debug("Getting balance ratio from sdk: [{}, {}, {}].",
+                      red.nCurValue, green.nCurValue, blue.nCurValue);
+        return {red.nCurValue, green.nCurValue, blue.nCurValue};
+    } else {
+        spdlog::debug("Getting balance ratio directly: [{}, {}, {}].",
+                      balance_ratio_.value()[0], balance_ratio_.value()[1],
+                      balance_ratio_.value()[2]);
+        return balance_ratio_.value();
+    }
 }
 
-/**
- * @brief Sets the white balance ratio.
- * @param balance New white balance ratio for RGB channels.
- * @return True if the balance ratio was set successfully, false otherwise.
- */
-bool HikCamera::setBalanceRatio(std::array<unsigned int, 3>&& balance) {
-    spdlog::trace("Entering setBalanceRatio() for camera {}", camera_sn_);
+bool HikCamera::setBalanceRatio(unsigned int red, unsigned int green,
+                                unsigned int blue) {
     std::unique_lock lock(mutex_);
-    balance_ratio_ = balance;
+
+    balance_ratio_ = {red, green, blue};
+
     return setBalanceRatioInner();
 }
 
-/**
- * @brief Determines if auto white balance is enabled.
- * @return True if auto white balance is enabled, false otherwise.
- */
 bool HikCamera::getBalanceRatioAuto() const {
     std::shared_lock lock(mutex_);
-    return auto_white_balance_;
+    return !balance_ratio_.has_value();
 }
 
 /**
- * @brief Enables or disables auto white balance.
+ * @brief Enables auto white balance.
  * @param balance_auto Whether to enable auto white balance.
  * @return True if the auto white balance setting was applied successfully,
  * false otherwise.
  */
-bool HikCamera::setBalanceRatioAuto(bool balance_auto) {
+bool HikCamera::setBalanceRatioAuto() {
     spdlog::trace("Entering setBalanceRatioAuto() for camera {}", camera_sn_);
     std::unique_lock lock(mutex_);
-    auto_white_balance_ = balance_auto;
+
+    balance_ratio_ = std::nullopt;
+
     return setBalanceRatioInner();
 }
 
-/**
- * @brief Gets the camera's serial number.
- * @return The camera's serial number as a string.
- */
 std::string HikCamera::getCameraSn() const {
     std::shared_lock lock(mutex_);
     spdlog::debug("Getting camera serial number: {}.", camera_sn_);
     return camera_sn_;
 }
 
-/**
- * @brief Sets the resolution of the camera internally.
- * @return True if the resolution was set successfully, false otherwise.
- */
 bool HikCamera::setResolutionInner() {
-    MVCC_INTVALUE width;
-    MVCC_INTVALUE height;
-    std::memset(&width, 0, sizeof(MVCC_INTVALUE));
-    std::memset(&height, 0, sizeof(MVCC_INTVALUE));
-
     spdlog::trace("Entering setResolutionInner()");
 
-    HIK_CHECK_NORETURN(MV_CC_GetWidth, "get width", handle_, &width);
-    HIK_CHECK_NORETURN(MV_CC_GetHeight, "get width", handle_, &height);
+    MVCC_INTVALUE width;
+    MVCC_INTVALUE height;
+    HIK_CHECK_RETURN_BOOL(MV_CC_GetWidth, "get width", handle_, &width);
+    HIK_CHECK_RETURN_BOOL(MV_CC_GetHeight, "get width", handle_, &height);
 
     spdlog::debug("Current width limits: nMin = {}, nMax = {}, nInc = {}",
                   width.nMin, width.nMax, width.nInc);
     spdlog::debug("Current height limits: nMin = {}, nMax = {}, nInc = {}",
                   height.nMin, height.nMax, height.nInc);
 
-    if (width.nMax != 0 || height.nMax != 0) {
-        if (width_ < width.nMin || width_ > width.nMax ||
-            height_ < height.nMin || height_ > height.nMax) {
-            spdlog::error(
-                "Invalid resolution {}x{}. Required width: {}~{}, height: "
-                "{}~{}.",
-                width_, height_, width.nMin, width.nMax, height.nMin,
-                height.nMax);
-            return false;
-        }
+    if (!resolution_.has_value()) {
+        spdlog::info(
+            "Resolution configuration is not set, will set to max resolution "
+            "{}x{}.",
+            width.nMax, height.nMax);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width.nMax);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_,
+                              height.nMax);
+    } else if (resolution_.value().first < width.nMin ||
+               resolution_.value().first > width.nMax ||
+               resolution_.value().second < height.nMin ||
+               resolution_.value().second > height.nMax) {
+        spdlog::warn(
+            "Resolution {}x{} out of range (width: {}~{}, height: {}~{}), will "
+            "set to max resolution {}x{}.",
+            resolution_.value().first, resolution_.value().second, width.nMin,
+            width.nMax, height.nMin, height.nMax, width.nMin, width.nMax);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width.nMax);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_,
+                              height.nMax);
+    } else {
+        auto [curr_width, curr_height] = resolution_.value();
 
-        spdlog::info("Valid resolution {}x{} within required range.", width_,
-                     height_);
-
-        if (width_ % width.nInc != 0) {
-            auto width_old = width_;
-            width_ = (width_ / width.nInc + 1) * width.nInc;
-            if (width_ > width.nMax) {
-                width_ -= width.nInc;
+        if (curr_width % width.nInc != 0) {
+            auto width_old = curr_width;
+            curr_width = (curr_width / width.nInc + 1) * width.nInc;
+            if (curr_width > width.nMax) {
+                curr_width -= width.nInc;
             }
             spdlog::warn("Width should be times of {}, fixed from {} to {}.",
-                         width.nInc, width_old, width_);
+                         width.nInc, width_old, curr_width);
         }
-
-        if (height_ % height.nInc != 0) {
-            auto height_old = height_;
-            height_ = (height_ / height.nInc + 1) * height.nInc;
-            if (height_ > height.nMax) {
-                height_ -= height.nInc;
+        if (curr_height % width.nInc != 0) {
+            auto height_old = curr_height;
+            curr_height = (curr_height / width.nInc + 1) * width.nInc;
+            if (curr_height > width.nMax) {
+                curr_height -= width.nInc;
             }
-            spdlog::warn("Height should be times of {}, fixed from {} to {}.",
-                         height.nInc, height_old, height_);
+            spdlog::warn("Width should be times of {}, fixed from {} to {}.",
+                         width.nInc, height_old, curr_height);
         }
+        spdlog::info("Setting resolution to {}x{}.", curr_width, curr_height);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, curr_width);
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_,
+                              curr_height);
     }
 
-    spdlog::debug("Setting final resolution: {}x{}", width_, height_);
-
-    HIK_CHECK_RETURN_BOOL(MV_CC_SetWidth, "set width", handle_, width_);
-    HIK_CHECK_RETURN_BOOL(MV_CC_SetHeight, "set height", handle_, height_);
-
-    spdlog::info("Resolution set successfully: {}x{}", width_, height_);
-    spdlog::trace("Exiting setResolutionInner()");
-
+    spdlog::info("Resolution set successfully.");
     return true;
 }
 
-/**
- * @brief Sets the white balance ratio internally.
- * @return True if the white balance ratio was set successfully, false
- * otherwise.
- */
+bool HikCamera::setExposureInner() {
+    spdlog::trace("Entering setExposureInner()");
+
+    if (!exposure_.has_value()) {
+        spdlog::info("Exposure value is null, will set to auto exposure mode.");
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
+            static_cast<unsigned int>(HikExposureAuto::Continuous));
+    } else {
+        MVCC_FLOATVALUE exposure;
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetExposureTime, "get exposure time",
+                              handle_, &exposure);
+        if (exposure_ > exposure.fMax || exposure_ < exposure.fMin) {
+            spdlog::warn(
+                "Exposure value {} out of range ({}~{}), exposure mode will be "
+                "set to auto.",
+                exposure_.value(), exposure.fMin, exposure.fMax);
+            HIK_CHECK_RETURN_BOOL(
+                MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
+                static_cast<unsigned int>(HikExposureAuto::Continuous));
+        } else {
+            spdlog::info("Setting manual exposure with exposure time {} μs.",
+                         exposure_);
+            HIK_CHECK_RETURN_BOOL(
+                MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
+                static_cast<unsigned int>(HikExposureAuto::Off));
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureTime, "set exposure time",
+                                  handle_, exposure_.value());
+        }
+    }
+
+    spdlog::info("Exposure setting applied successfully.");
+    return true;
+}
+
+bool HikCamera::setGammaInner() {
+    spdlog::trace("Entering setGammaInner()");
+
+    if (!gamma_.has_value()) {
+        spdlog::info(
+            "Gamma value is null, gamma correction will not be enabled.");
+        HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable", handle_,
+                              "GammaEnable", false);
+    } else {
+        MVCC_FLOATVALUE gamma;
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetGamma, "get gamma", handle_, &gamma);
+
+        if (gamma_ > gamma.fMax || gamma_ < gamma.fMin) {
+            spdlog::error(
+                "Gamma value {} out of range ({}~{}), gamma correction will be "
+                "disabled.",
+                gamma_.value(), gamma.fMin, gamma.fMax);
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable",
+                                  handle_, "GammaEnable", false);
+        } else {
+            spdlog::info("Enabling gamma correction with gamma value: {}.",
+                         gamma_.value());
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable",
+                                  handle_, "GammaEnable", true);
+            HIK_CHECK_RETURN_BOOL(
+                MV_CC_SetGammaSelector, "set gamma selector", handle_,
+                static_cast<unsigned int>(HikGammaSelector::User));
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetGamma, "set gamma", handle_,
+                                  gamma_.value());
+        }
+    }
+
+    spdlog::info("Gamma setting applied successfully.");
+    return true;
+}
+
+bool HikCamera::setGainInner() {
+    spdlog::trace("Entering setGainInner()");
+
+    if (!gain_.has_value()) {
+        spdlog::info("Gain value is null, gain mode will be set to auto.");
+        HIK_CHECK_RETURN_BOOL(
+            MV_CC_SetGainMode, "set gain auto", handle_,
+            static_cast<unsigned int>(HikGainAuto::Continuous));
+    } else {
+        MVCC_FLOATVALUE gain;
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetGain, "get gain", handle_, &gain);
+
+        if (gain_ > gain.fMax || gain_ < gain.fMin) {
+            spdlog::error(
+                "Gain value {} out of range ({}~{}), gain mode will be set to "
+                "auto.",
+                gain_.value(), gain.fMin, gain.fMax);
+            HIK_CHECK_RETURN_BOOL(
+                MV_CC_SetGainMode, "set gain auto", handle_,
+                static_cast<unsigned int>(HikGainAuto::Continuous));
+        } else {
+            spdlog::info("Setting manual gain with gain value: {}.", gain_);
+
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
+                                  static_cast<unsigned int>(HikGainAuto::Off));
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetGain, "set gain", handle_,
+                                  gain_.value());
+        }
+    }
+
+    spdlog::info("Gain setting applied successfully.");
+    return true;
+}
+
 bool HikCamera::setBalanceRatioInner() {
     spdlog::trace("Entering setBalanceRatioInner()");
 
-    if (auto_white_balance_) {
+    if (!balance_ratio_.has_value()) {
         spdlog::info("Setting auto white balance to Continuous mode.");
         HIK_CHECK_RETURN_BOOL(
             MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
             static_cast<unsigned int>(HikBalanceWhiteAuto::Continuous));
+
+        spdlog::info("Balance ratio auto set successfully.");
+        return true;
     } else {
-        spdlog::info("Setting auto white balance to Off mode.");
-        HIK_CHECK_RETURN_BOOL(
-            MV_CC_SetBalanceWhiteAuto, "set balance white auto", handle_,
-            static_cast<unsigned int>(HikBalanceWhiteAuto::Off));
+        MVCC_INTVALUE red_info, green_info, blue_info;
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetBalanceRatioRed, "get balance ratio red",
+                              handle_, &red_info);
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetBalanceRatioGreen,
+                              "get balance ratio green", handle_, &green_info);
+        HIK_CHECK_RETURN_BOOL(MV_CC_GetBalanceRatioBlue,
+                              "get balance ratio blue", handle_, &blue_info);
 
-        spdlog::info(
-            "Setting manual balance ratios: Red = {}, Green = {}, Blue = {}.",
-            balance_ratio_[0], balance_ratio_[1], balance_ratio_[2]);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioRed, "set balance ratio red",
-                              handle_, balance_ratio_[0]);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioGreen,
-                              "set balance ratio green", handle_,
-                              balance_ratio_[1]);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioBlue,
-                              "set balance ratio blue", handle_,
-                              balance_ratio_[2]);
+        auto& [red, green, blue] = balance_ratio_.value();
+
+        if (red > red_info.nMax || red < red_info.nMin ||
+            green > green_info.nMax || green < green_info.nMin ||
+            blue > blue_info.nMax || blue < blue_info.nMin) {
+            spdlog::error(
+                "Invalid balance ratio: red={} ({}~{}), green={} ({}~{}), "
+                "blue={} "
+                "({}~{})",
+                red, red_info.nMin, red_info.nMax, green, green_info.nMin,
+                green_info.nMax, blue, blue_info.nMin, blue_info.nMax);
+
+            return false;
+        } else {
+            spdlog::info(
+                "Setting manual balance ratios: Red = {}, Green = {}, Blue = "
+                "{}.",
+                red, green, blue);
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioRed,
+                                  "set balance ratio red", handle_, red);
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioGreen,
+                                  "set balance ratio green", handle_, green);
+            HIK_CHECK_RETURN_BOOL(MV_CC_SetBalanceRatioBlue,
+                                  "set balance ratio blue", handle_, blue);
+            spdlog::info("Balance ratio set successfully.");
+
+            return true;
+        }
     }
-
-    spdlog::info("Balance ratio set successfully.");
-    spdlog::trace("Exiting setBalanceRatioInner()");
-    return true;
 }
 
-/**
- * @brief Sets the exposure value internally.
- * @return True if the exposure value was set successfully, false otherwise.
- */
-bool HikCamera::setExposureInner() {
-    spdlog::trace("Entering setExposureInner()");
-
-    if (exposure_ > 0) {
-        spdlog::info("Setting manual exposure with exposure time: {} μs.",
-                     exposure_);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureAutoMode, "set exposure auto",
-                              handle_,
-                              static_cast<unsigned int>(HikExposureAuto::Off));
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetExposureTime, "set exposure time",
-                              handle_, exposure_);
-    } else {
-        spdlog::info("Setting auto exposure mode.");
-
-        HIK_CHECK_RETURN_BOOL(
-            MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
-            static_cast<unsigned int>(HikExposureAuto::Continuous));
-    }
-
-    spdlog::info("Exposure setting applied successfully.");
-    spdlog::trace("Exiting setExposureInner()");
-    return true;
-}
-
-/**
- * @brief Sets the gamma correction value internally.
- * @return True if the gamma value was set successfully, false otherwise.
- */
-bool HikCamera::setGammaInner() {
-    spdlog::trace("Entering setGammaInner()");
-
-    if (gamma_ > 0.0f) {
-        spdlog::info("Enabling gamma correction with gamma value: {}.", gamma_);
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetBoolValue, "set gamma enable", handle_,
-                              "GammaEnable", true);
-        HIK_CHECK_RETURN_BOOL(
-            MV_CC_SetGammaSelector, "set gamma selector", handle_,
-            static_cast<unsigned int>(HikGammaSelector::User));
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetGamma, "set gamma", handle_, gamma_);
-    } else {
-        spdlog::info(
-            "Gamma correction is not enabled since gamma value is <= 0.");
-    }
-
-    spdlog::info("Gamma setting applied successfully.");
-    spdlog::trace("Exiting setGammaInner()");
-    return true;
-}
-
-/**
- * @brief Sets the gain value internally.
- * @return True if the gain value was set successfully, false otherwise.
- */
-bool HikCamera::setGainInner() {
-    spdlog::trace("Entering setGainInner()");
-
-    if (gain_ > 0) {
-        spdlog::info("Setting manual gain with gain value: {}.", gain_);
-
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
-                              static_cast<unsigned int>(HikGainAuto::Off));
-        HIK_CHECK_RETURN_BOOL(MV_CC_SetGain, "set gain", handle_, gain_);
-    } else {
-        spdlog::info("Setting auto gain mode.");
-        HIK_CHECK_RETURN_BOOL(
-            MV_CC_SetGainMode, "set gain auto", handle_,
-            static_cast<unsigned int>(HikGainAuto::Continuous));
-    }
-
-    spdlog::info("Gain setting applied successfully.");
-    spdlog::trace("Exiting setGainInner()");
-    return true;
-}
-
-/**
- * @brief Sets the exception flag for the camera.
- * @param occurred New value for the exception flag.
- */
 void HikCamera::setExceptionOccurred(bool occurred) {
     spdlog::info("Setting exception occurred state to: {}.", occurred);
     exception_occurred_ = occurred;
 }
 
-/**
- * @brief Gets the current value of the exception flag.
- * @return True if an exception has occurred, false otherwise.
- */
 bool HikCamera::isExceptionOccurred() const {
     spdlog::debug("Checking if exception occurred: {}.",
                   exception_occurred_.load());
     return exception_occurred_;
 }
 
-/**
- * @brief Gets camera information from a device info structure.
- * @param device_info Pointer to the device info structure.
- * @return A formatted string containing the camera information.
- */
 std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
     assert(device_info->nTLayerType == MV_USB_DEVICE && "Wrong device type");
     auto info = &device_info->SpecialInfo.stUsb3VInfo;
@@ -859,21 +883,12 @@ std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
         reinterpret_cast<const char*>(info->chVendorName));
 }
 
-/**
- * @brief Gets camera information from the current device.
- * @return A formatted string containing the camera information.
- */
 std::string HikCamera::getCameraInfo() const {
     std::shared_lock lock(mutex_);
     spdlog::debug("Acquired lock for opening camera {}", camera_sn_);
     return HikCamera::getCameraInfo(device_info_.get());
 }
 
-/**
- * @brief Exception handler callback function.
- * @param code Exception code.
- * @param user Pointer to the user-defined data (in this case, the camera).
- */
 void HikCamera::exceptionHandler(unsigned int code, void* user) {
     spdlog::trace("Reaching exception handler.");
     auto camera = static_cast<HikCamera*>(user);
@@ -882,9 +897,6 @@ void HikCamera::exceptionHandler(unsigned int code, void* user) {
     camera->setExceptionOccurred(true);
 }
 
-/**
- * @brief Starts a daemon thread to monitor camera exceptions.
- */
 void HikCamera::startDaemonThread() {
     daemon_thread_ = std::jthread([this](std::stop_token token) {
         while (!token.stop_requested()) {
@@ -912,10 +924,6 @@ void HikCamera::startDaemonThread() {
                  std::hash<std::thread::id>{}(daemon_thread_.get_id()));
 }
 
-/**
- * @brief Retrieves the list of available device information.
- * @return A span of pointers to the device information structures.
- */
 std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
     std::call_once(is_device_info_list_init_, [] {
         device_info_list_ = std::make_shared<MV_CC_DEVICE_INFO_LIST>();
@@ -936,12 +944,6 @@ std::span<MV_CC_DEVICE_INFO*> HikCamera::getDeviceInfoList() {
                                          device_info_list_->nDeviceNum);
 }
 
-/**
- * @brief Converts the pixel format of an image.
- * @param image The image to convert.
- * @param format The desired pixel format.
- * @return The image converted.
- */
 cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                                       PixelFormat format) {
     spdlog::debug("Starting pixel format conversion from {} to {}",
@@ -949,6 +951,43 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                   magic_enum::enum_name(format));
     cv::Mat output_image;
     switch (pixel_format_) {
+        case HikPixelFormat::BGR8Packed:
+            spdlog::trace("Handling HikPixelFormat::RGB8Packed");
+            switch (format) {
+                case PixelFormat::GRAY:
+                    spdlog::debug("Converting from BGR to GRAY");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2GRAY);
+                    break;
+                case PixelFormat::RGB:
+                    spdlog::debug("Converting from BGR to RGB");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2RGB);
+                    break;
+                case PixelFormat::BGR:
+                    spdlog::debug(
+                        "No conversion needed for BGR, will clone image");
+                    output_image = input_image.clone();
+                    break;
+                case PixelFormat::RGBA:
+                    spdlog::debug("Converting from BGR to RGBA");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2RGBA);
+                    break;
+                case PixelFormat::BGRA:
+                    spdlog::debug("Converting from BGR to BGRA");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2BGRA);
+                    break;
+                case PixelFormat::HSV:
+                    spdlog::debug("Converting from BGR to HSV");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2HSV);
+                    break;
+                case PixelFormat::YUV:
+                    spdlog::debug("Converting from BGR to YUV");
+                    cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
+                    break;
+                default:
+                    spdlog::error("Invalid target format for BGR8Packed");
+                    assert(0 && "unreachable code");
+            }
+            break;
         case HikPixelFormat::RGB8Packed:
             spdlog::trace("Handling HikPixelFormat::RGB8Packed");
             switch (format) {
@@ -1275,19 +1314,21 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
 unsigned int HikCamera::getPixelFormatValue(HikPixelFormat format) {
     switch (format) {
         case HikPixelFormat::RGB8Packed:
-            return 0x02180014;
+            return PixelType_Gvsp_RGB8_Packed;
+        case HikPixelFormat::BGR8Packed:
+            return PixelType_Gvsp_BGR8_Packed;
         case HikPixelFormat::YUV422_8:
-            return 0x02100032;
+            return PixelType_Gvsp_YUV422_Packed;
         case HikPixelFormat::YUV422_8_UYVY:
-            return 0x0210001F;
+            return PixelType_Gvsp_YUV422_YUYV_Packed;
         case HikPixelFormat::BayerGR8:
-            return 0x01080008;
+            return PixelType_Gvsp_BayerGR8;
         case HikPixelFormat::BayerRG8:
-            return 0x01080009;
+            return PixelType_Gvsp_BayerRG8;
         case HikPixelFormat::BayerGB8:
-            return 0x0108000A;
+            return PixelType_Gvsp_BayerGB8;
         case HikPixelFormat::BayerBG8:
-            return 0x0108000B;
+            return PixelType_Gvsp_BayerBG8;
         default:
             return 0x0;
     }

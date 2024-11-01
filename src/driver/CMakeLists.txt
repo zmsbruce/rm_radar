@@ -20,7 +20,7 @@ target_link_libraries(driver PUBLIC
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
     ${Hikvision_LIBS}
-    ${LivoxLIDAR_LIBS}
+    ${Livox_LIBS}
     spdlog::spdlog
     magic_enum::magic_enum
 )

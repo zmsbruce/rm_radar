@@ -5,4 +5,5 @@ if(EXISTS /usr/local/include/livox_sdk.h AND EXISTS /usr/local/lib/liblivox_sdk_
     message(STATUS "Livox found: ${Livox_LIBS}")
 else()
     set(Livox_FOUND False)
+    message(FATAL_ERROR "Livox SDK not found")
 endif()

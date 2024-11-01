@@ -94,8 +94,8 @@ namespace radar::camera {
  */
 enum class HikPixelFormat {
     Unknown,        // 0x0
-    RGB8Packed,     // 0x02180014
-    BGR8Packed,     // 0x02180014
+    RGB8,           // 0x02180014
+    BGR8,           // 0x02180014
     YUV422_8,       // 0x02100032
     YUV422_8_UYVY,  // 0x0210001F
     BayerGR8,       // 0x01080008
@@ -168,10 +168,10 @@ class HikCamera : public ColorCamera {
      * used.
      * @param gain Optional gain value. If not provided, the default gain is
      * used.
-     * @param pixel_format Optional pixel format as a string view. If not
-     * provided or invalid, the default or unknown pixel format is used.
      * @param balance_ratio Optional white balance ratio as an array of three
      * unsigned integers. If not provided, the default balance ratio is used.
+     * @param pixel_format Optional pixel format as a string view. If not
+     * provided or invalid, the default or unknown pixel format is used.
      * @param grab_timeout Timeout for grabbing frames from the camera, in
      * milliseconds. Defaults to 1000ms.
      */
@@ -182,8 +182,8 @@ class HikCamera : public ColorCamera {
         std::optional<float> exposure = std::nullopt,
         std::optional<float> gamma = std::nullopt,
         std::optional<float> gain = std::nullopt,
-        std::optional<std::string_view> pixel_format = std::nullopt,
         std::optional<std::array<unsigned int, 3>> balance_ratio = std::nullopt,
+        std::optional<std::string_view> pixel_format = std::nullopt,
         unsigned int grab_timeout = 1000);
 
     /**
@@ -951,6 +951,14 @@ class HikCamera : public ColorCamera {
      * information list.
      */
     inline static std::once_flag is_device_info_list_init_;
+
+    /**
+     * @brief A thread that runs in the background to monitor exceptions and
+     * handle reconnections.
+     *
+     * This `std::jthread` constantly checks for exceptions and attempts to
+     * reconnect the camera when necessary.
+     */
     std::jthread daemon_thread_;
 };
 

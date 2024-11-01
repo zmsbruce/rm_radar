@@ -24,9 +24,9 @@ HikCamera::HikCamera(
     std::string_view camera_sn,
     std::optional<std::pair<unsigned int, unsigned int>> resolution,
     std::optional<float> exposure, std::optional<float> gamma,
-    std::optional<float> gain, std::optional<std::string_view> pixel_format,
+    std::optional<float> gain,
     std::optional<std::array<unsigned int, 3>> balance_ratio,
-    unsigned int grab_timeout)
+    std::optional<std::string_view> pixel_format, unsigned int grab_timeout)
     : camera_sn_(camera_sn),
       resolution_(resolution),
       exposure_(exposure),
@@ -347,9 +347,22 @@ bool HikCamera::grabImage(cv::Mat& image,
     // Convert the buffer to a cv::Mat object
     spdlog::trace("Converting frame buffer to cv::Mat for camera {}.",
                   camera_sn_);
+
+    int type;
+    switch (pixel_format_) {
+        case HikPixelFormat::BayerBG8:
+        case HikPixelFormat::BayerGB8:
+        case HikPixelFormat::BayerGR8:
+        case HikPixelFormat::BayerRG8:
+            type = CV_8UC1;
+            break;
+        default:
+            type = CV_8UC3;
+            break;
+    }
     cv::Mat temp_image =
         cv::Mat(frame_out_->stFrameInfo.nHeight, frame_out_->stFrameInfo.nWidth,
-                CV_8UC3, frame_out_->pBufAddr);
+                type, frame_out_->pBufAddr);
 
     // Check if the image is valid (not empty)
     if (temp_image.empty()) {
@@ -418,10 +431,10 @@ bool HikCamera::setPixelFormatInner() {
     spdlog::debug("Attempting to set pixel format for camera {}.", camera_sn_);
 
     static const std::vector<HikPixelFormat> candidate_formats{
-        HikPixelFormat::BGR8Packed, HikPixelFormat::RGB8Packed,
-        HikPixelFormat::BayerBG8,   HikPixelFormat::BayerGB8,
-        HikPixelFormat::BayerGR8,   HikPixelFormat::BayerRG8,
-        HikPixelFormat::YUV422_8,   HikPixelFormat::YUV422_8_UYVY,
+        HikPixelFormat::BayerBG8, HikPixelFormat::BayerGB8,
+        HikPixelFormat::BayerGR8, HikPixelFormat::BayerRG8,
+        HikPixelFormat::BGR8,     HikPixelFormat::RGB8,
+        HikPixelFormat::YUV422_8, HikPixelFormat::YUV422_8_UYVY,
     };
 
     const auto supported_formats = getSupportedPixelFormats();
@@ -429,32 +442,40 @@ bool HikCamera::setPixelFormatInner() {
     spdlog::trace("Supported pixel formats for camera {}: [{:#x}]", camera_sn_,
                   fmt::join(supported_formats, ", "));
 
-    if (std::ranges::any_of(
-            supported_formats, [this](unsigned int supported_type) {
-                return getPixelFormatValue(pixel_format_) == supported_type;
-            })) {
-        return true;
-    } else if (pixel_format_ != HikPixelFormat::Unknown) {
-        spdlog::warn(
-            "Current pixel format is {} which is not supported, will choose "
-            "another.",
-            magic_enum::enum_name(pixel_format_));
-    }
-
-    // Iterate over candidate formats and check if any are supported
-    for (auto type : candidate_formats) {
-        spdlog::trace("Checking if pixel format {}: {:#x} is supported.",
-                      magic_enum::enum_name(type), getPixelFormatValue(type));
-
-        if (std::ranges::any_of(
-                supported_formats, [type](unsigned int supported_type) {
-                    return getPixelFormatValue(type) == supported_type;
-                })) {
-            pixel_format_ = type;
-            spdlog::debug("Pixel format {} selected for camera {}.",
-                          magic_enum::enum_name(pixel_format_), camera_sn_);
-            break;
+    if (!std::ranges::any_of(supported_formats, [this](unsigned int format) {
+            return getPixelFormatValue(pixel_format_) == format;
+        })) {
+        if (pixel_format_ != HikPixelFormat::Unknown) {
+            spdlog::warn(
+                "Current pixel format is {} which is not supported, will "
+                "choose another.",
+                magic_enum::enum_name(pixel_format_));
         }
+
+        // Iterate over candidate formats and check if any are supported
+        for (auto type : candidate_formats) {
+            spdlog::trace(
+                "Checking if pixel format {}: {:#x} is supported for camera "
+                "{}.",
+                magic_enum::enum_name(type), getPixelFormatValue(type),
+                camera_sn_);
+
+            if (std::ranges::any_of(
+                    supported_formats, [type](unsigned int supported_type) {
+                        return getPixelFormatValue(type) == supported_type;
+                    })) {
+                pixel_format_ = type;
+                spdlog::debug("Pixel format {} selected for camera {}.",
+                              magic_enum::enum_name(pixel_format_), camera_sn_);
+                break;
+            } else {
+                spdlog::trace("{} is not supported for camera {}",
+                              magic_enum::enum_name(type), camera_sn_);
+            }
+        }
+    } else {
+        spdlog::trace("Pixel format {} is supported for camera {}",
+                      magic_enum::enum_name(pixel_format_), camera_sn_);
     }
 
     // If no supported pixel type was found, log a critical error
@@ -467,8 +488,9 @@ bool HikCamera::setPixelFormatInner() {
     }
 
     // Set the pixel format using the selected pixel type
-    spdlog::trace("Setting pixel format to {} for camera {}.",
-                  magic_enum::enum_name(pixel_format_), camera_sn_);
+    spdlog::trace("Setting pixel format to {}: {:#x} for camera {}.",
+                  magic_enum::enum_name(pixel_format_),
+                  getPixelFormatValue(pixel_format_), camera_sn_);
     HIK_CHECK_RETURN_BOOL(MV_CC_SetPixelFormat, "set pixel format", handle_,
                           getPixelFormatValue(pixel_format_));
 
@@ -949,10 +971,13 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
     spdlog::debug("Starting pixel format conversion from {} to {}",
                   magic_enum::enum_name(pixel_format_),
                   magic_enum::enum_name(format));
+    spdlog::debug("Input image size: {}x{}x{}, type: {}",
+                  input_image.size().width, input_image.size().height,
+                  input_image.channels(), input_image.type());
     cv::Mat output_image;
     switch (pixel_format_) {
-        case HikPixelFormat::BGR8Packed:
-            spdlog::trace("Handling HikPixelFormat::RGB8Packed");
+        case HikPixelFormat::BGR8:
+            spdlog::trace("Handling HikPixelFormat::RGB8");
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from BGR to GRAY");
@@ -984,12 +1009,12 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BGR8Packed");
+                    spdlog::error("Invalid target format for BGR8");
                     assert(0 && "unreachable code");
             }
             break;
-        case HikPixelFormat::RGB8Packed:
-            spdlog::trace("Handling HikPixelFormat::RGB8Packed");
+        case HikPixelFormat::RGB8:
+            spdlog::trace("Handling HikPixelFormat::RGB8");
             switch (format) {
                 case PixelFormat::GRAY:
                     spdlog::debug("Converting from RGB to GRAY");
@@ -1021,7 +1046,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_RGB2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for RGB8Packed");
+                    spdlog::error("Invalid target format for RGB8");
                     assert(0 && "unreachable code");
             }
             break;
@@ -1307,15 +1332,20 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                 "Unknown pixel format encountered in convertPixelFormat");
     }
 
-    spdlog::debug("Pixel format conversion completed");
+    spdlog::trace("Pixel format conversion completed");
+    spdlog::debug("Output image size: {}x{}x{}, type: {}",
+                  output_image.size().width, output_image.size().height,
+                  output_image.channels(), output_image.type());
     return output_image;
 }
 
 unsigned int HikCamera::getPixelFormatValue(HikPixelFormat format) {
+    spdlog::debug("Pixel format in getPixelFormatValue: {}",
+                  magic_enum::enum_name(format));
     switch (format) {
-        case HikPixelFormat::RGB8Packed:
+        case HikPixelFormat::RGB8:
             return PixelType_Gvsp_RGB8_Packed;
-        case HikPixelFormat::BGR8Packed:
+        case HikPixelFormat::BGR8:
             return PixelType_Gvsp_BGR8_Packed;
         case HikPixelFormat::YUV422_8:
             return PixelType_Gvsp_YUV422_Packed;

@@ -29,22 +29,6 @@ namespace radar {
 
 using namespace radar::detect;
 
-/**
- * @brief Constructs a Detector object with the specified parameters.
- * @param engine_path The path to the engine file.
- * @param classes The number of classes in detection.
- * @param max_batch_size The maximum batch size.
- * @param opt_barch_size The optimized batch size of `std::optional<int>` type.
- * @param image_size The size of input image or images as bytes.
- * @param nms_thresh The threshold in nms suppression.
- * @param input_width The input width.
- * @param input_height The input height.
- * @param input_name The input name.
- * @param input_channels The number of channels.
- * @param opt_level The optimization level from 0 to 5.
- * @throws `std::invalid_argument` if engine file does not exist and given
- * engine filename does not contain delimeter "."
- */
 Detector::Detector(std::string_view engine_path, int classes,
                    int max_batch_size, std::optional<int> opt_batch_size,
                    size_t image_size, float nms_thresh, float conf_thresh,
@@ -240,20 +224,6 @@ Detector::~Detector() {
     spdlog::info("Detector destroyed and all resources released");
 }
 
-/**
- * @brief Serialize the TensorRT engine from an ONNX model file.
- *
- * @param onnx_path The path to the ONNX model file.
- * @param engine_path The path where the serialized engine will be saved.
- * @param opt_batch_size The optimized batch size for the engine.
- * @param max_batch_size The maximum batch size supported by the engine.
- * @param opt_level The level of optimization ranging from 0 to 5.
- * @return The serialized engine model as a `std::pair<std::shared_ptr<char[]>,
- * size_t>`.
- * @throws `std::invalid_argument` if the batch size is invalid.
- * @throws `std::runtime_error` if the ONNX file does not exist or there is an
- * error in the process.
- */
 std::pair<std::shared_ptr<char[]>, size_t> Detector::serializeEngine(
     std::string_view onnx_path, int opt_batch_size, int max_batch_size,
     int opt_level) {
@@ -378,19 +348,6 @@ std::pair<std::shared_ptr<char[]>, size_t> Detector::serializeEngine(
         model->size());
 }
 
-/**
- * @brief Restores the detection scaling and translation to the original image
- * dimensions.
- *
- * This function adjusts the detection's coordinates and size from the processed
- * scale back to the original image scale. It accounts for any padding and
- * scaling that was applied to the image before processing it through the
- * detection network.
- *
- * @param[out] detection A reference to the Detection object to be restored.
- * @param[in] pparam The preprocessing parameters that contain scaling factors
- * and padding offsets used to adjust the detection's properties.
- */
 void Detector::restoreDetection(Detection& detection,
                                 const PreParam& pparam) const noexcept {
     spdlog::debug(
@@ -432,17 +389,6 @@ void Detector::restoreDetection(Detection& detection,
                   detection.x, detection.y, detection.width, detection.height);
 }
 
-/**
- * @brief Writes data to a file at the specified path.
- *
- * This function takes a span of characters as input and writes them to
- * a file specified by the path. It opens the file in binary mode and throws
- * exceptions on failure.
- *
- * @param data A std::span<const char> representing the data to be written.
- * @param path A std::string_view representing the file path where data is to be
- * written.
- */
 void Detector::writeToFile(std::span<const char> data, std::string_view path) {
     spdlog::info("Writing data to file: {}", path);
     spdlog::debug("Data size to be written: {} bytes", data.size());
@@ -458,18 +404,6 @@ void Detector::writeToFile(std::span<const char> data, std::string_view path) {
     spdlog::debug("File {} closed successfully", path);
 }
 
-/**
- * @brief Loads data from a file into memory.
- *
- * Opens a file in binary mode specified by the path. It reads the entire
- * content into a dynamically allocated buffer and returns it along with its
- * size.
- *
- * @param path A std::string_view representing the path of the file to read
- * from.
- * @return A pair consisting of a shared pointer to the loaded data and the size
- * of the data.
- */
 auto Detector::loadFromFile(std::string_view path)
     -> std::pair<std::shared_ptr<char[]>, size_t> {
     spdlog::info("Loading file: {}", path);
@@ -497,19 +431,8 @@ auto Detector::loadFromFile(std::string_view path)
     return std::make_pair(buffer, size);
 }
 
-/**
- * @brief Computes the Intersection over Union (IoU) of two rectangles.
- *
- * The IoU is a measure used in object detection to quantify the accuracy of
- * an object detector on a particular dataset. It calculates the ratio of
- * intersection area to the union area of two rectangles.
- *
- * @param rect1 The first rectangle as a cv::Rect2f.
- * @param rect2 The second rectangle as a cv::Rect2f.
- * @return The IoU ratio as a float. Returns 0.0 if the union area is zero.
- */
-static float computeIoU(const cv::Rect2f& rect1,
-                        const cv::Rect2f& rect2) noexcept {
+float Detector::computeIoU(const cv::Rect2f& rect1,
+                           const cv::Rect2f& rect2) noexcept {
     spdlog::debug("Computing IoU for two rectangles:");
     spdlog::debug("Rect1: x={}, y={}, width={}, height={}", rect1.x, rect1.y,
                   rect1.width, rect1.height);
@@ -553,32 +476,6 @@ static float computeIoU(const cv::Rect2f& rect1,
     }
 }
 
-/**
- * @brief Constructs a RobotDetector object.
- *
- * This constructor initializes the RobotDetector with the specified parameters
- * for car detection and armor detection engines, as well as various thresholds
- * and input configurations.
- *
- * @param car_engine_path The file path to the car detection engine.
- * @param armor_engine_path The file path to the armor detection engine.
- * @param armor_classes The number of armor classes.
- * @param max_cars The maximum number of cars detected in one frame.
- * @param opt_cars The optimized number of cars detected in one frame.
- * @param iou_thresh The Intersection over Union (IoU) threshold for detection.
- * @param car_nms_thresh The Non-Maximum Suppression (NMS) threshold for car
- * detection.
- * @param car_conf_thresh The confidence threshold for car detection.
- * @param armor_nms_thresh The Non-Maximum Suppression (NMS) threshold for armor
- * detection.
- * @param armor_conf_thresh The confidence threshold for armor detection.
- * @param image_size The size of the input images.
- * @param input_width The width of the input images.
- * @param input_height The height of the input images.
- * @param input_name The name of the input node in the detection engine.
- * @param input_channels The number of channels in the input images.
- * @param opt_level The optimization level for the detection engine.
- */
 RobotDetector::RobotDetector(std::string_view car_engine_path,
                              std::string_view armor_engine_path,
                              int armor_classes, int max_cars, int opt_cars,
@@ -598,23 +495,6 @@ RobotDetector::RobotDetector(std::string_view car_engine_path,
           armor_nms_thresh, armor_conf_thresh, input_width, input_height,
           input_name, input_channels, opt_level)) {}
 
-/**
- * @brief Detects robots within an image using separate detectors for cars and
- * armor.
- *
- * This function first uses a car detector to identify potential car locations
- * in an image. For each detected car, a sub-image is extracted and these images
- * are then passed to an armor detector. It constructs a collection of Robot
- * objects based on the detections from both detectors. It also handles
- * overlapping detections by using an IoU threshold to determine whether two
- * detections are referring to the same object.
- *
- * @param image The input image in which to detect robots.
- *
- * @return A `std::vector<Robot>` containing all detected robots. Each robot is
- * represented by a Robot object, which includes information about the car and
- * armor detections.
- */
 std::vector<Robot> RobotDetector::detect(const cv::Mat& image) noexcept {
     spdlog::debug("Starting robot detection.");
 
@@ -664,8 +544,8 @@ std::vector<Robot> RobotDetector::detect(const cv::Mat& image) noexcept {
             robots_map.emplace(label, robot);
         } else {
             auto& exist_robot = robots_map.at(label);
-            float iou =
-                computeIoU(exist_robot.rect().value(), robot.rect().value());
+            float iou = Detector::computeIoU(exist_robot.rect().value(),
+                                             robot.rect().value());
             spdlog::trace("IoU between existing robot and new robot: {}", iou);
 
             if (iou > iou_thresh_) {

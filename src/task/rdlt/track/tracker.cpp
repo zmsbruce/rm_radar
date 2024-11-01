@@ -28,25 +28,6 @@ namespace radar {
 
 using namespace track;
 
-/**
- * @brief Construct the Tracker class
- *
- * @param observation_noise The observation noise(m).
- * @param class_num The number of classes.
- * @param init_thresh Times needed to convert a track from tentative to
- * confirmed.
- * @param miss_thresh Times needed to mark a confirmed track to deleted.
- * @param max_acceleration Max acceleration(m/s^2) needed for the Singer-EKF
- * model.
- * @param acceleration_correlation_time Acceleration correlation time
- * constant(tau) of the Singer-EKF model.
- * @param distance_weight The weight of distance which is needed in min-cost
- * matching.
- * @param feature_weight The weight of feature which is needed in min-cost
- * matching.
- * @param max_iter The maximum iteration time of the auction algorithm.
- * @param distance_thresh The distance threshold(m) for scoring.
- */
 Tracker::Tracker(const cv::Point3f& observation_noise, int class_num,
                  int init_thresh, int miss_thresh, float max_acceleration,
                  float acceleration_correlation_time, float distance_weight,
@@ -73,14 +54,6 @@ Tracker::Tracker(const cv::Point3f& observation_noise, int class_num,
         observation_noise.z);
 }
 
-/**
- * @brief Calculate the weighted Euclidean distance between two points in 3D
- * space.
- *
- * @param p1 The first point.
- * @param p2 The second point.
- * @return The Euclidean distance.
- */
 float Tracker::calculateDistance(const cv::Point3f& p1,
                                  const cv::Point3f& p2) noexcept {
     float x1 = p1.x, y1 = p1.y, z1 = p1.z;
@@ -89,14 +62,6 @@ float Tracker::calculateDistance(const cv::Point3f& p1,
                      (z1 - z2) * (z1 - z2));
 }
 
-/**
- * @brief Calculate the cost associated with matching a track to a robot
- * observation.
- *
- * @param track The track for which to calculate the cost.
- * @param robot The robot observation to be matched to the track.
- * @return The calculated cost.
- */
 float Tracker::calculateCost(const Track& track,
                              const Robot& robot) const noexcept {
     if (!robot.isLocated() && !robot.isDetected()) {
@@ -133,12 +98,6 @@ float Tracker::calculateCost(const Track& track,
     return distance_score * distance_weight_ + feature_score * feature_weight_;
 }
 
-/**
- * @brief Update all tracks based on a new set of robot observations.
- *
- * @param robots The new robot observations.
- * @param timestamp The timestamp of the observations.
- */
 void Tracker::update(
     std::vector<Robot>& robots,
     const std::chrono::high_resolution_clock::time_point& timestamp) noexcept {

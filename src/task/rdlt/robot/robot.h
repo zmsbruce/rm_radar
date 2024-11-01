@@ -52,8 +52,19 @@ enum Label {
  */
 class Robot {
    public:
+    /**
+     * @brief Construct the robot with the detection result, setting the
+     * detection variables of the robot, which include the vector of armor
+     * detections as well as the label, confidence and bbox of the robot.
+     *
+     * @param car The detected car information.
+     * @param armors Vector of detected armor infomation.
+     */
     Robot(const Detection& car, const std::vector<Detection>& armors);
 
+    /**
+     * @brief Default robot constructor.
+     */
     Robot() = default;
 
     /**
@@ -80,9 +91,22 @@ class Robot {
      */
     inline bool isTracked() const noexcept { return track_state_.has_value(); }
 
+    /**
+     * @brief Set the detection variables of the robot, which include the
+     * vector of armor detections as well as the label, confidence and bbox of
+     * the robot.
+     *
+     * @param car The detected car information.
+     * @param armors Vector of detected armor infomation.
+     */
     void setDetection(const Detection& car,
                       const std::vector<Detection>& armors) noexcept;
 
+    /**
+     * @brief Sets the track state and the filtered location of the robot.
+     *
+     * @param track The track of the robot.
+     */
     void setTrack(const Track& track) noexcept;
 
     /**
@@ -150,16 +174,66 @@ class Robot {
         return location_;
     }
 
+    /**
+     * @brief Gets the feature of the robot, which is a vector containing
+     * confidence of each class.
+     *
+     * @return The feature vector.
+     */
     Eigen::VectorXf feature(int class_num) const noexcept;
 
     friend std::ostream& operator<<(std::ostream& os, const Robot& robot);
 
    private:
+    /**
+     * @brief The detected armor information for the robot.
+     *
+     * This stores a vector of armor detections if the robot has been detected.
+     * If the robot has not been detected, this value is `std::nullopt`.
+     */
     std::optional<std::vector<Detection>> armors_ = std::nullopt;
+
+    /**
+     * @brief The tracking state of the robot.
+     *
+     * This stores the current tracking state of the robot, which includes its
+     * predicted location and velocity. If the robot is not being tracked, this
+     * value is `std::nullopt`.
+     */
     std::optional<TrackState> track_state_ = std::nullopt;
+
+    /**
+     * @brief The 3D location of the robot in the world coordinate system.
+     *
+     * This stores the 3D location of the robot (in meters) if it has been
+     * located. If the robot has not been located, this value is `std::nullopt`.
+     */
     std::optional<cv::Point3f> location_ = std::nullopt;
+
+    /**
+     * @brief The bounding box of the robot in the image.
+     *
+     * This stores the 2D bounding box of the robot in the image if it has been
+     * detected. If the robot has not been detected, this value is
+     * `std::nullopt`.
+     */
     std::optional<cv::Rect2f> rect_ = std::nullopt;
+
+    /**
+     * @brief The label of the robot.
+     *
+     * This stores the label of the robot, which indicates its type (e.g., hero,
+     * engineer, infantry). If the robot has not been detected, this value is
+     * `std::nullopt`.
+     */
     std::optional<int> label_ = std::nullopt;
+
+    /**
+     * @brief The detection confidence for the robot.
+     *
+     * This stores the confidence score for the robot's detection. If the robot
+     * has not been detected, this value is `std::nullopt`.
+     */
     std::optional<float> confidence_ = std::nullopt;
 };
 

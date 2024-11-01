@@ -18,26 +18,10 @@
 
 namespace radar {
 
-/**
- * @brief Construct the robot with the detection result, setting the detection
- * variables of the robot, which include the vector of armor detections as well
- * as the label, confidence and bbox of the robot.
- *
- * @param car The detected car information.
- * @param armors Vector of detected armor infomation.
- */
 Robot::Robot(const Detection& car, const std::vector<Detection>& armors) {
     setDetection(car, armors);
 }
 
-/**
- * @brief Set the detection variables of the robot, which include the
- * vector of armor detections as well as the label, confidence and bbox of
- * the robot.
- *
- * @param car The detected car information.
- * @param armors Vector of detected armor infomation.
- */
 void Robot::setDetection(const Detection& car,
                          const std::vector<Detection>& armors) noexcept {
     // Sets the bbox of car
@@ -73,11 +57,6 @@ void Robot::setDetection(const Detection& car,
     }
 }
 
-/**
- * @brief Sets the track state and the filtered location of the robot.
- *
- * @param track The track of the robot.
- */
 void Robot::setTrack(const Track& track) noexcept {
     track_state_ = track.state();
     if (track.isConfirmed()) {
@@ -93,12 +72,6 @@ void Robot::setTrack(const Track& track) noexcept {
     }
 }
 
-/**
- * @brief Gets the feature of the robot, which is a vector containing
- * confidence of each class.
- *
- * @return The feature vector.
- */
 Eigen::VectorXf Robot::feature(int class_num) const noexcept {
     // Returns average if it is not detected
     Eigen::VectorXf feature(class_num);

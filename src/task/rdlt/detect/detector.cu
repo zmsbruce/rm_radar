@@ -20,23 +20,6 @@
 
 namespace radar::detect {
 
-/**
- * @brief Resizes an image using bilinear interpolation.
- *
- * This CUDA kernel is used to resize an image to a new size using bilinear
- * interpolation. It maps each pixel in the destination image to a corresponding
- * pixel in the source image. The value of a pixel in the destination image
- * is calculated using a weighted average of the 4 nearest pixels in the source
- * image. This kernel handles multi-channel images.
- *
- * @param src Pointer to the source image in global memory.
- * @param dst Pointer to the destination image in global memory.
- * @param channels Number of channels in the source and destination images.
- * @param src_w Width of the source image.
- * @param src_h Height of the source image.
- * @param dst_w Width of the destination image.
- * @param dst_h Height of the destination image.
- */
 __global__ void resizeKernel(const unsigned char* src, unsigned char* dst,
                              int channels, int src_w, int src_h, int dst_w,
                              int dst_h) {
@@ -80,25 +63,6 @@ __global__ void resizeKernel(const unsigned char* src, unsigned char* dst,
     }
 }
 
-/**
- * @brief Copies an image and makes a border around it.
- *
- * This CUDA kernel copies a source image into a new destination image and adds
- * borders on all four sides with a specified color. The size of the borders
- * on each side can be different. The border color is constant and specified
- * for each channel of the image. If the source image has multiple channels,
- * the border value for each channel must be provided.
- *
- * @param src Pointer to the source image in global memory.
- * @param dst Pointer to the destination image in global memory.
- * @param channels Number of channels in the source and destination images.
- * @param src_w Width of the source image.
- * @param src_h Height of the source image.
- * @param top Height of the top border.
- * @param bottom Height of the bottom border.
- * @param left Width of the left border.
- * @param right Width of the right border.
- */
 __global__ void copyMakeBorderKernel(const unsigned char* src,
                                      unsigned char* dst, int channels,
                                      int src_w, int src_h, int top, int bottom,
@@ -132,22 +96,6 @@ __global__ void copyMakeBorderKernel(const unsigned char* src,
     }
 }
 
-/**
- * @brief Kernel function to transform an image from BGR to a scaled float
- * planar representation.
- *
- * This kernel takes an image in BGR format (as an array of unsigned chars) and
- * converts it into a scaled floating-point representation (in an array of
- * floats). The scaling factor is applied to each pixel, and the channels are
- * reordered from "BGRBGRBGR" to "RRRGGGBBB".
- *
- * @param src Pointer to the input image data in BGR format.
- * @param dst Pointer to the output image data in scaled float representation.
- * @param width Width of the input image in pixels.
- * @param height Height of the input image in pixels.
- * @param channels Number of channels in the source and destination images.
- * @param scale Scaling factor to apply to each pixel's value.
- */
 __global__ void blobKernel(const unsigned char* src, float* dst, int width,
                            int height, int channels, float scale) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -170,18 +118,6 @@ __global__ void blobKernel(const unsigned char* src, float* dst, int width,
     }
 }
 
-/**
- * @brief Transposes a batch of matrices using CUDA parallelization.
- *
- * This CUDA kernel function transposes a batch of matrices represented as a
- * 1D array of float values. The transposition is performed in-place, modifying
- * the input array.
- *
- * @param src Pointer to the source array of input matrices.
- * @param dst Pointer to the destination array for the transposed matrices.
- * @param rows The number of rows in each matrix.
- * @param cols The number of columns in each matrix.
- */
 __global__ void transposeKernel(const float* src, float* dst, int rows,
                                 int cols) {
     int src_row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -202,20 +138,6 @@ __global__ void transposeKernel(const float* src, float* dst, int rows,
     }
 }
 
-/**
- * @brief Decode detection data from the neural network output.
- *
- * This kernel decodes the bounding box and class score data from the network
- * output. It iterates over all anchors for each batch item, determining the
- * class with the highest score and writing the results to the output array.
- *
- * @param src Pointer to the input data (raw neural network output).
- * @param dst Pointer to the output data (decoded detections).
- * @param channels Number of channels in the input data (e.g., bbox coordinates
- * + class scores).
- * @param anchors Number of anchors.
- * @param classes Number of classes.
- */
 __global__ void decodeKernel(const float* src, float* dst, int channels,
                              int anchors, int classes) {
     int row = blockDim.x * blockIdx.x + threadIdx.x;
@@ -250,24 +172,6 @@ __global__ void decodeKernel(const float* src, float* dst, int channels,
     dst[offset + 5] = confidence;
 }
 
-/**
- * @brief Calculate Intersection over Union (IoU) for two bounding boxes.
- *
- * This function is designed to be compatible with both the host and device side
- * in CUDA. It calculates the IoU based on the coordinates and dimensions of two
- * bounding boxes.
- *
- * @param x1 The x-coordinate of the top-left corner of the first bounding box.
- * @param y1 The y-coordinate of the top-left corner of the first bounding box.
- * @param width1 The width of the first bounding box.
- * @param height1 The height of the first bounding box.
- * @param x2 The x-coordinate of the top-left corner of the second bounding box.
- * @param y2 The y-coordinate of the top-left corner of the second bounding box.
- * @param width2 The width of the second bounding box.
- * @param height2 The height of the second bounding box.
- * @return The IoU score as a floating point value. If there is no intersection,
- * returns 0.0f.
- */
 __host__ __device__ float IoU(float x1, float y1, float width1, float height1,
                               float x2, float y2, float width2, float height2) {
     float x_left = max(x1, x2);
@@ -292,26 +196,6 @@ __host__ __device__ float IoU(float x1, float y1, float width1, float height1,
     return intersection_area / union_area;
 }
 
-/**
- * @brief Non-Maximum Suppression (NMS) kernel for object detection.
- *
- * This CUDA kernel performs NMS on detection results to eliminate redundant
- * overlapping bounding boxes based on their Intersection over Union (IoU)
- * value. If the confidence score of a detection is below the score threshold,
- * its label is set to NaN. For each detection, it compares with all other
- * detections and if the IoU is above the NMS threshold and the confidence score
- * of the compared detection is higher, the label of the current detection is
- * set to NaN.
- *
- * @param dev Pointer to the device memory where detections are stored. Each
- * detection has the following format: [x, y, width, height, label,
- * confidence].
- * @param nms_thresh The IoU threshold for determining when to suppress
- * overlapping detections.
- * @param score_thresh The minimum confidence score required to keep a
- * detection.
- * @param anchors The total number of detections (anchors).
- */
 __global__ void NMSKernel(float* dev, float nms_thresh, float score_thresh,
                           int anchors) {
     const int block_size = blockDim.x;
@@ -365,18 +249,6 @@ namespace radar {
 
 using namespace radar::detect;
 
-/**
- * @brief Preprocesses a single image using the Detector class.
- *
- * This function preprocesses a single image using the provided Detector class.
- * It performs several operations including resizing, padding, and normalization
- * to prepare the image for further processing.
- *
- * @param image The input image to be preprocessed.
- * @return A vector of preprocessed image parameters with only a single element.
- * @note The number of channels of input image must be equal to
- * `input_channels_` or it will trigger assertion failure.
- */
 std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
     spdlog::debug("Starting preprocessing single image.");
 
@@ -460,22 +332,6 @@ std::vector<PreParam> Detector::preprocess(const cv::Mat& image) noexcept {
     return std::vector<PreParam>{pparam};
 }
 
-/**
- * @brief Preprocesses a batch of images using the Detector class.
- *
- * This function preprocesses a batch of images using the provided Detector
- * class. It performs several operations including resizing, padding, and
- * normalization for each image in the batch, and returns the preprocessed image
- * parameters for each image.
- *
- * @param first Iterator pointing to the first image in the batch.
- * @param last Iterator pointing to the position after the last image in the
- * batch.
- * @return A vector of preprocessed image parameters for each image in the
- * batch.
- * @note The number of channels of each input image must be equal to
- * `input_channels_` or it will trigger assertion failure.
- */
 std::vector<PreParam> Detector::preprocess(
     const std::span<cv::Mat> images) noexcept {
     spdlog::debug("Starting preprocessing of {} images.", images.size());
@@ -592,24 +448,6 @@ std::vector<PreParam> Detector::preprocess(
     return pparams;
 }
 
-/**
- * @brief Post-process the detections using CUDA kernels.
- *
- * This function post-processes the raw output of a detection model using CUDA.
- * It consists of transposing the output matrix, decoding the detections,
- * applying non-maximum suppression (NMS), sorting the detections, and filtering
- * them based on a confidence threshold. The results are copied back to the host
- * and returned as a vector of Detection objects. Each Detection object is
- * restored with corresponding `PreParam` data before being added to the
- * results.
- *
- * @param pparams A `std::span` of PreParam objects that contain pre-processing
- * parameters.
- * @return `std::vector<std::vector<Detection>>` A batch-sized vector of vectors
- * containing the detections.
- * @note This function will call `std::abort()` if problems have been
- * encountered in CUDA operations or memory allocation.
- */
 std::vector<std::vector<Detection>> Detector::postprocess(
     std::span<PreParam> pparams) noexcept {
     spdlog::debug("Starting postprocessing for {} images.", batch_size_);

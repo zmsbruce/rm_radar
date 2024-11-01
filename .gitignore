@@ -4,5 +4,5 @@
 bin
 build
 lib
-models/*.engine
+model/*.engine
 test/detect/*.engine

@@ -402,8 +402,9 @@ std::span<unsigned int> HikCamera::getSupportedPixelFormats() {
     auto supported_pixel_format =
         std::span(supported_pixel_formats_->nSupportValue,
                   supported_pixel_formats_->nSupportedNum);
-    spdlog::debug("Supported pixel format for camera {}: [{:#x}]", camera_sn_,
-                  fmt::join(supported_pixel_format, ", "));
+    // spdlog::debug("Supported pixel format for camera {}: [{:#x}]",
+    // camera_sn_,
+    //               fmt::join(supported_pixel_format, ", "));
     return supported_pixel_format;
 }
 
@@ -436,8 +437,9 @@ bool HikCamera::setPixelFormatInner() {
 
     const auto supported_formats = getSupportedPixelFormats();
 
-    spdlog::trace("Supported pixel formats for camera {}: [{:#x}]", camera_sn_,
-                  fmt::join(supported_formats, ", "));
+    // spdlog::trace("Supported pixel formats for camera {}: [{:#x}]",
+    // camera_sn_,
+    //               fmt::join(supported_formats, ", "));
 
     if (!std::ranges::any_of(supported_formats, [this](unsigned int format) {
             return getPixelFormatValue(pixel_format_) == format;
@@ -548,7 +550,7 @@ float HikCamera::getGain() const {
         spdlog::debug("Getting gain value from sdk: {}.", gain.fCurValue);
         return gain.fCurValue;
     } else {
-        spdlog::debug("Getting gain value directly: {}.", gain_);
+        spdlog::debug("Getting gain value directly: {}.", gain_.value());
         return gain_.value();
     }
 }
@@ -578,7 +580,8 @@ int HikCamera::getExposureTime() const {
                       exposure.fCurValue);
         return exposure.fCurValue;
     } else {
-        spdlog::debug("Getting exposure time directly: {} μs.", exposure_);
+        spdlog::debug("Getting exposure time directly: {} μs.",
+                      exposure_.value());
         return static_cast<int>(exposure_.value());
     }
 }
@@ -741,7 +744,7 @@ bool HikCamera::setExposureInner() {
                 static_cast<unsigned int>(HikExposureAuto::Continuous));
         } else {
             spdlog::trace("Setting manual exposure with exposure time {} μs.",
-                          exposure_);
+                          exposure_.value());
             HIK_CHECK_RETURN_BOOL(
                 MV_CC_SetExposureAutoMode, "set exposure auto", handle_,
                 static_cast<unsigned int>(HikExposureAuto::Off));
@@ -811,7 +814,8 @@ bool HikCamera::setGainInner() {
                 MV_CC_SetGainMode, "set gain auto", handle_,
                 static_cast<unsigned int>(HikGainAuto::Continuous));
         } else {
-            spdlog::trace("Setting manual gain with gain value: {}.", gain_);
+            spdlog::trace("Setting manual gain with gain value: {}.",
+                          gain_.value());
 
             HIK_CHECK_RETURN_BOOL(MV_CC_SetGainMode, "set gain auto", handle_,
                                   static_cast<unsigned int>(HikGainAuto::Off));

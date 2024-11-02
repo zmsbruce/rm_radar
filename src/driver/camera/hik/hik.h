@@ -963,31 +963,3 @@ class HikCamera : public ColorCamera {
 };
 
 }  // namespace radar::camera
-
-/**
- * @brief A custom `fmt::formatter` specialization for formatting
- * `std::optional<T>` types.
- *
- * This template struct allows `std::optional<T>` to be formatted using the
- * `fmt` library. If the `std::optional` contains a value, the value is
- * formatted using the existing `fmt::formatter<T>`. If the `std::optional` is
- * empty (`nullopt`), it is formatted as `"null"`.
- *
- * @tparam T The type contained within the `std::optional`.
- */
-template <typename T>
-struct fmt::formatter<std::optional<T>> : fmt::formatter<T> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return fmt::formatter<T>::parse(ctx);
-    }
-
-    template <typename FormatContext>
-    auto format(const std::optional<T>& opt, FormatContext& ctx) {
-        if (opt) {
-            return fmt::formatter<T>::format(*opt, ctx);
-        } else {
-            return fmt::format_to(ctx.out(), "null");
-        }
-    }
-};

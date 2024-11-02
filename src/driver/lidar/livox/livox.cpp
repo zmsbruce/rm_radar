@@ -102,7 +102,7 @@ LivoxLidar::LivoxLidar(std::string_view broadcast_code, size_t max_point_num,
         broadcast_code_);
     LIDAR_INSTANCES[broadcast_code_] = this;
 
-    spdlog::info(
+    spdlog::trace(
         "LivoxLidar instance created successfully with broadcast_code: {}",
         broadcast_code_);
 }
@@ -120,18 +120,15 @@ LivoxLidar::~LivoxLidar() {
         LIVOX_CHECK_NORETURN(DisconnectDevice, "disconnect device", handle_,
                              onDisconnectDevice, nullptr);
         is_connected_ = false;
-        spdlog::info("Lidar {} disconnected successfully.", broadcast_code_);
     } else {
         spdlog::debug("Lidar {} is not connected, no need to disconnect.",
                       broadcast_code_);
     }
 
     // Clean up and uninitialize the SDK
-    spdlog::debug("Uninitializing the Livox SDK for broadcast_code: {}",
-                  broadcast_code_);
+    spdlog::debug("Uninitializing the Livox SDK.");
     Uninit();
-    spdlog::info("Livox SDK uninitialized for broadcast_code: {}",
-                 broadcast_code_);
+    spdlog::info("Livox SDK uninitialized.");
 
     // Remove the instance from the LIDAR_INSTANCES map
     spdlog::trace(
@@ -141,7 +138,7 @@ LivoxLidar::~LivoxLidar() {
     std::unique_lock lock(LIDAR_INSTANCES_MUTEX);
 
     if (LIDAR_INSTANCES.erase(broadcast_code_) > 0) {
-        spdlog::info(
+        spdlog::trace(
             "LivoxLidar instance for broadcast_code {} erased from "
             "LIDAR_INSTANCES.",
             broadcast_code_);
@@ -188,7 +185,7 @@ bool LivoxLidar::connect() {
         return false;
     }
 
-    spdlog::info("Lidar {} connected successfully.", broadcast_code_);
+    spdlog::trace("Exit connect()");
     return true;
 }
 
@@ -208,8 +205,7 @@ bool LivoxLidar::disconnect() {
     LIVOX_CHECK_RETURN_BOOL(DisconnectDevice, "disconnect device", handle_,
                             onDisconnectDevice, this);
 
-    // Log successful disconnection
-    spdlog::info("Lidar {} disconnected successfully.", broadcast_code_);
+    spdlog::trace("Exit disconnect()");
     return true;
 }
 
@@ -231,8 +227,7 @@ bool LivoxLidar::start() {
     LIVOX_CHECK_RETURN_BOOL(LidarStartSampling, "start sampling", handle_,
                             onStartSampling, this);
 
-    // Log successful start of sampling
-    spdlog::info("Lidar {} started sampling successfully.", broadcast_code_);
+    spdlog::trace("Exit start()");
     return true;
 }
 
@@ -254,8 +249,7 @@ bool LivoxLidar::stop() {
     LIVOX_CHECK_RETURN_BOOL(LidarStopSampling, "stop sampling", handle_,
                             onStopSampling, this);
 
-    // Log successful stop of sampling
-    spdlog::info("Lidar {} stopped sampling successfully.", broadcast_code_);
+    spdlog::trace("Exit stop()");
     return true;
 }
 
@@ -280,8 +274,7 @@ void LivoxLidar::getPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
         // Copy the point cloud data
         pcl::copyPointCloud(*point_cloud_, *cloud);
         spdlog::debug(
-            "Point cloud successfully copied for broadcast_code: {}. Point "
-            "count: {}",
+            "Point cloud copied for broadcast_code: {}. Point count: {}",
             broadcast_code_, point_cloud_->size());
     }
 }
@@ -305,7 +298,7 @@ void LivoxLidar::clearPointCloud() {
     } else {
         // Clear the point cloud
         point_cloud_->clear();
-        spdlog::info("Point cloud cleared successfully for broadcast_code: {}.",
+        spdlog::info("Point cloud cleared for broadcast_code: {}.",
                      broadcast_code_);
     }
 }
@@ -342,7 +335,7 @@ void LivoxLidar::onDeviceBroadcast(const BroadcastDeviceInfo* info) {
 
     // If an instance was found, proceed with the connection
     if (instance != nullptr) {
-        spdlog::info(
+        spdlog::debug(
             "Broadcast code {} matched. Attempting to connect the lidar.",
             info->broadcast_code);
 
@@ -356,7 +349,7 @@ void LivoxLidar::onDeviceBroadcast(const BroadcastDeviceInfo* info) {
         SetDataCallback(instance->handle_, LivoxLidar::onGetLidarData,
                         &instance);
 
-        spdlog::info(
+        spdlog::trace(
             "Lidar with broadcast_code: {} is now connected and data callback "
             "is set.",
             info->broadcast_code);
@@ -588,8 +581,8 @@ void LivoxLidar::onGetLidarData(uint8_t handle, LivoxEthPacket* eth_packet,
             break;
     }
 
-    spdlog::info("Processing completed for handle {} with {} points.", handle,
-                 data_num);
+    spdlog::trace("Processing completed for handle {} with {} points.", handle,
+                  data_num);
 }
 
 void LivoxLidar::onQueryDeviceInfo(livox_status status, uint8_t handle,
@@ -610,10 +603,10 @@ void LivoxLidar::onQueryDeviceInfo(livox_status status, uint8_t handle,
     }
 
     // Log the firmware version if available
-    spdlog::info("Received device information for handle {}.", handle);
-    spdlog::info("Firmware version: {}.{}.{}.{}", ack->firmware_version[0],
-                 ack->firmware_version[1], ack->firmware_version[2],
-                 ack->firmware_version[3]);
+    spdlog::trace("Received device information for handle {}.", handle);
+    spdlog::info("Lidar firmware version: {}.{}.{}.{}",
+                 ack->firmware_version[0], ack->firmware_version[1],
+                 ack->firmware_version[2], ack->firmware_version[3]);
 
     // Optionally check client_data to log additional information
     if (client_data == nullptr) {
@@ -623,7 +616,7 @@ void LivoxLidar::onQueryDeviceInfo(livox_status status, uint8_t handle,
     } else {
         auto lidar = static_cast<LivoxLidar*>(client_data);
         if (lidar->handle_ == handle) {
-            spdlog::info(
+            spdlog::trace(
                 "Device info queried for LiDAR with broadcast code: {}",
                 lidar->device_info_.broadcast_code);
         } else {
@@ -767,7 +760,7 @@ void LivoxLidar::onSetCartesianCoor(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully set cartesian coordinate for handle {}. Response: "
             "{}.",
             handle, response);
@@ -802,7 +795,7 @@ void LivoxLidar::onSetImuFreq(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully set IMU frequency for handle {}. Response: {}.",
             handle, response);
     } else {
@@ -836,7 +829,7 @@ void LivoxLidar::onDisconnectDevice(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully disconnected lidar with handle {}. Response: {}.",
             handle, response);
 
@@ -883,7 +876,7 @@ void LivoxLidar::onSetCloudMode(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully set cloud mode for lidar with handle {}. Response: "
             "{}.",
             handle, response);
@@ -918,7 +911,7 @@ void LivoxLidar::onStartSampling(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully started sampling for lidar with handle {}. Response: "
             "{}.",
             handle, response);
@@ -954,7 +947,7 @@ void LivoxLidar::onStopSampling(livox_status status, uint8_t handle,
 
     // Log the result of the operation based on the status
     if (status == kStatusSuccess) {
-        spdlog::info(
+        spdlog::trace(
             "Successfully stopped sampling for lidar with handle {}. Response: "
             "{}.",
             handle, response);

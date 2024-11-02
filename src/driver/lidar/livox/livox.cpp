@@ -52,7 +52,7 @@ LivoxLidar::LivoxLidar(std::string_view broadcast_code, size_t max_point_num,
             cloud_mode_ = kTripleReturn;
             break;
         default:
-            assert(0 && "unreachable code in cloud mode setting.");
+            __builtin_unreachable();
     }
 
     imu_freq_ = imu_enable == LivoxImuEnable::On ? kImuFreq200Hz : kImuFreq0Hz;

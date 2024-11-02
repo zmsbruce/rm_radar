@@ -891,7 +891,10 @@ bool HikCamera::isExceptionOccurred() const {
 }
 
 std::string HikCamera::getCameraInfo(MV_CC_DEVICE_INFO* device_info) {
-    assert(device_info->nTLayerType == MV_USB_DEVICE && "Wrong device type");
+    if (device_info->nTLayerType != MV_USB_DEVICE) {
+        spdlog::warn("Skip device {:#x} which is not USB type.",
+                     device_info->nDevTypeInfo);
+    }
     auto info = &device_info->SpecialInfo.stUsb3VInfo;
     return fmt::format(
         "device guid: {}, device version: {}, family name: {}, manufacturer "
@@ -1010,8 +1013,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BGR8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
         case HikPixelFormat::RGB8:
@@ -1047,8 +1049,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_RGB2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for RGB8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1093,8 +1094,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BayerBG8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1139,8 +1139,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BayerGB8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1185,8 +1184,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BayerGR8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1231,8 +1229,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for BayerRG8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1277,8 +1274,7 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for YUV422_8");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
@@ -1323,14 +1319,12 @@ cv::Mat HikCamera::convertPixelFormat(const cv::Mat& input_image,
                     cv::cvtColor(input_image, output_image, cv::COLOR_BGR2YUV);
                     break;
                 default:
-                    spdlog::error("Invalid target format for YUV422_8_UYVY");
-                    assert(0 && "unreachable code");
+                    __builtin_unreachable();
             }
             break;
 
         default:
-            spdlog::error(
-                "Unknown pixel format encountered in convertPixelFormat");
+            __builtin_unreachable();
     }
 
     spdlog::trace("Pixel format conversion completed");

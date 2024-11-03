@@ -50,20 +50,6 @@ class Lidar {
     virtual bool disconnect() = 0;
 
     /**
-     * @brief Starts the LiDAR device, enabling data acquisition.
-     *
-     * @return true if the device starts successfully, false otherwise.
-     */
-    virtual bool start() = 0;
-
-    /**
-     * @brief Stops the LiDAR device, halting data acquisition.
-     *
-     * @return true if the device stops successfully, false otherwise.
-     */
-    virtual bool stop() = 0;
-
-    /**
      * @brief Retrieves model information about the LiDAR device.
      *
      * @return A string containing the model information.

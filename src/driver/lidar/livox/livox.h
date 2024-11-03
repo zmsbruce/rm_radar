@@ -193,24 +193,6 @@ class LivoxLidar final : public Lidar {
     void clearPointCloud() override;
 
     /**
-     * @brief Starts sampling data from the LiDAR.
-     *
-     * Initiates the data sampling process.
-     *
-     * @return true if sampling started successfully, false otherwise.
-     */
-    bool start() override;
-
-    /**
-     * @brief Stops sampling data from the LiDAR.
-     *
-     * Stops the data sampling process.
-     *
-     * @return true if sampling stopped successfully, false otherwise.
-     */
-    bool stop() override;
-
-    /**
      * @brief Retrieves detailed information about the LiDAR device in a
      * formatted string.
      *

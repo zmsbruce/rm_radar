@@ -115,6 +115,13 @@ LivoxLidar::~LivoxLidar() {
     if (isConnected()) {
         spdlog::debug("Lidar {} is connected, attempting to disconnect.",
                       broadcast_code_);
+        // Stop sampling first before disconnecting
+        if (!isStopped()) {
+            spdlog::debug("Stopping LiDAR sampling for broadcast_code: {}",
+                          broadcast_code_);
+            LIVOX_CHECK_NORETURN(LidarStopSampling, "stop sampling", handle_,
+                                 onStopSampling, nullptr);
+        }
 
         // Attempt to disconnect the device
         LIVOX_CHECK_NORETURN(DisconnectDevice, "disconnect device", handle_,
@@ -200,56 +207,20 @@ bool LivoxLidar::disconnect() {
         return false;  // Early exit if not connected
     }
 
+    // Stop sampling first before disconnecting
+    if (!isStopped()) {
+        spdlog::debug("Stopping LiDAR sampling for broadcast_code: {}",
+                      broadcast_code_);
+        LIVOX_CHECK_RETURN_BOOL(LidarStopSampling, "stop sampling", handle_,
+                                onStopSampling, this);
+    }
+
     // Attempt to disconnect the device using the macro
     spdlog::debug("Disconnecting Lidar {}...", broadcast_code_);
     LIVOX_CHECK_RETURN_BOOL(DisconnectDevice, "disconnect device", handle_,
                             onDisconnectDevice, this);
 
     spdlog::trace("Exit disconnect()");
-    return true;
-}
-
-bool LivoxLidar::start() {
-    spdlog::trace(
-        "Attempting to start sampling for LivoxLidar with broadcast_code: {}",
-        broadcast_code_);
-
-    // Check if the LiDAR is connected before starting sampling
-    if (!isConnected()) {
-        spdlog::error("Lidar {} is not connected, cannot start sampling.",
-                      broadcast_code_);
-        return false;
-    }
-
-    // Attempt to start the sampling process
-    spdlog::debug("Starting LiDAR sampling for broadcast_code: {}",
-                  broadcast_code_);
-    LIVOX_CHECK_RETURN_BOOL(LidarStartSampling, "start sampling", handle_,
-                            onStartSampling, this);
-
-    spdlog::trace("Exit start()");
-    return true;
-}
-
-bool LivoxLidar::stop() {
-    spdlog::trace(
-        "Attempting to stop sampling for LivoxLidar with broadcast_code: {}",
-        broadcast_code_);
-
-    // Check if the LiDAR is connected before stopping sampling
-    if (!isConnected()) {
-        spdlog::error("Lidar {} is not connected, cannot stop sampling.",
-                      broadcast_code_);
-        return false;
-    }
-
-    // Attempt to stop the sampling process
-    spdlog::debug("Stopping LiDAR sampling for broadcast_code: {}",
-                  broadcast_code_);
-    LIVOX_CHECK_RETURN_BOOL(LidarStopSampling, "stop sampling", handle_,
-                            onStopSampling, this);
-
-    spdlog::trace("Exit stop()");
     return true;
 }
 
@@ -752,10 +723,11 @@ void LivoxLidar::onSetCartesianCoor(livox_status status, uint8_t handle,
 
     // Check if the handle matches the lidar instance's handle
     if (handle != lidar->handle_) {
-        spdlog::warn(
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -787,10 +759,11 @@ void LivoxLidar::onSetImuFreq(livox_status status, uint8_t handle,
 
     // Check if the handle matches the lidar instance's handle
     if (handle != lidar->handle_) {
-        spdlog::warn(
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -810,7 +783,7 @@ void LivoxLidar::onDisconnectDevice(livox_status status, uint8_t handle,
                                     uint8_t response, void* client_data) {
     // Check if client_data is valid
     if (client_data == nullptr) {
-        spdlog::warn(
+        spdlog::debug(
             "Client data is null in DisconnectDevice callback for handle {}. "
             "This is only permitted in deconstruction.",
             handle);
@@ -821,10 +794,11 @@ void LivoxLidar::onDisconnectDevice(livox_status status, uint8_t handle,
 
     // Check if the handle matches the lidar instance's handle
     if (lidar != nullptr && handle != lidar->handle_) {
-        spdlog::warn(
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -868,10 +842,11 @@ void LivoxLidar::onSetCloudMode(livox_status status, uint8_t handle,
 
     // Check if the handle matches the lidar instance's handle
     if (handle != lidar->handle_) {
-        spdlog::warn(
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -880,6 +855,24 @@ void LivoxLidar::onSetCloudMode(livox_status status, uint8_t handle,
             "Successfully set cloud mode for lidar with handle {}. Response: "
             "{}.",
             handle, response);
+
+        spdlog::trace(
+            "Attempting to start sampling for LivoxLidar with broadcast_code: "
+            "{}",
+            lidar->broadcast_code_);
+
+        // Check if the LiDAR is connected before starting sampling
+        if (!lidar->isConnected()) {
+            spdlog::error("Lidar {} is not connected, cannot start sampling.",
+                          lidar->broadcast_code_);
+            return;
+        }
+
+        // Attempt to start the sampling process
+        spdlog::debug("Starting LiDAR sampling for broadcast_code: {}",
+                      lidar->broadcast_code_);
+        LIVOX_CHECK_RETURN_VOID(LidarStartSampling, "start sampling",
+                                lidar->handle_, onStartSampling, lidar);
     } else {
         spdlog::error(
             "Failed to set cloud mode for lidar with handle {}. Status: {}, "
@@ -903,10 +896,11 @@ void LivoxLidar::onStartSampling(livox_status status, uint8_t handle,
 
     // Check if the handle matches the lidar instance's handle
     if (handle != lidar->handle_) {
-        spdlog::warn(
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -928,8 +922,9 @@ void LivoxLidar::onStopSampling(livox_status status, uint8_t handle,
                                 uint8_t response, void* client_data) {
     // Check if client_data is valid
     if (client_data == nullptr) {
-        spdlog::error(
-            "Client data is null in StopSampling callback for handle {}.",
+        spdlog::debug(
+            "Client data is null in StopSampling callback for handle {}. This "
+            "is only permitted in deconstructor.",
             handle);
         return;
     }
@@ -938,11 +933,12 @@ void LivoxLidar::onStopSampling(livox_status status, uint8_t handle,
     auto lidar = static_cast<LivoxLidar*>(client_data);
 
     // Check if the handle matches the lidar instance's handle
-    if (handle != lidar->handle_) {
-        spdlog::warn(
+    if (lidar != nullptr && handle != lidar->handle_) {
+        spdlog::error(
             "Handle mismatch: received handle {} does not match lidar instance "
             "handle {}.",
             handle, lidar->handle_);
+        return;
     }
 
     // Log the result of the operation based on the status
@@ -951,7 +947,9 @@ void LivoxLidar::onStopSampling(livox_status status, uint8_t handle,
             "Successfully stopped sampling for lidar with handle {}. Response: "
             "{}.",
             handle, response);
-        lidar->is_started_ = false;  // Mark the lidar as stopped
+        if (lidar != nullptr) {
+            lidar->is_started_ = false;  // Mark the lidar as stopped
+        }
     } else {
         spdlog::error(
             "Failed to stop sampling for lidar with handle {}. Status: {}, "

@@ -113,8 +113,9 @@ bool Serial::read(std::span<std::byte> buffer) {
                       buffer.size());
 
         // Prepare the buffer for reading data from the serial port.
-        LibSerial::DataBuffer data_buffer(buffer.data(),
-                                          buffer.data() + buffer.size());
+        auto buffer_ptr = reinterpret_cast<uint8_t*>(buffer.data());
+        LibSerial::DataBuffer data_buffer(buffer_ptr,
+                                          buffer_ptr + buffer.size());
 
         serial_port_.Read(data_buffer, buffer.size());  // Read into the buffer.
         spdlog::debug("Buffer read successfully from serial {}", device_name_);
@@ -141,8 +142,8 @@ bool Serial::write(const std::span<const std::byte> data) {
                       data.size());
 
         // Prepare the data buffer for writing to the serial port.
-        LibSerial::DataBuffer data_buffer(data.data(),
-                                          data.data() + data.size());
+        auto data_ptr = reinterpret_cast<const uint8_t*>(data.data());
+        LibSerial::DataBuffer data_buffer(data_ptr, data_ptr + data.size());
 
         serial_port_.Write(data_buffer);  // Write the data to the serial port.
         spdlog::debug("Data wrote successfully to serial {}", device_name_);

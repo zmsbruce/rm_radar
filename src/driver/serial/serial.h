@@ -22,7 +22,7 @@
 #include <string>
 #include <string_view>
 
-namespace radar {
+namespace radar::serial {
 
 /**
  * @brief Serial class encapsulates the functionality for handling serial port
@@ -102,4 +102,4 @@ class Serial {
     std::mutex serial_mutex_;
 };
 
-}  // namespace radar
+}  // namespace radar::serial

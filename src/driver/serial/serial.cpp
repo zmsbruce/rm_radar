@@ -18,7 +18,7 @@
 
 #include <magic_enum/magic_enum.hpp>
 
-namespace radar {
+namespace radar::serial {
 
 Serial::Serial(std::string_view device_name, LibSerial::BaudRate baud_rate)
     : device_name_(device_name), baud_rate_(baud_rate) {
@@ -155,4 +155,4 @@ bool Serial::write(const std::span<const std::byte> data) {
     }
 }
 
-}  // namespace radar
+}  // namespace radar::serial

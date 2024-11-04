@@ -45,7 +45,7 @@ void Robot::setDetection(const Detection& car,
     confidence /= std::count_if(
         armors.begin(), armors.end(),
         [&](const Detection& armor) { return armor.label == label; });
-    label_ = label;
+    label_ = static_cast<Label>(label);
     confidence_ = confidence;
 
     // Sets the armor bboxes, adjusting their positions based on the position of
@@ -60,11 +60,11 @@ void Robot::setDetection(const Detection& car,
 void Robot::setTrack(const Track& track) noexcept {
     track_state_ = track.state();
     if (track.isConfirmed()) {
-        label_ = track.label();
+        label_ = static_cast<Label>(track.label());
         location_ = track.location();
     } else {  // track is tentative
         if (!label_.has_value()) {
-            label_ = track.label();
+            label_ = static_cast<Label>(track.label());
         }
         if (!location_.has_value()) {
             location_ = track.location();
@@ -92,40 +92,6 @@ Eigen::VectorXf Robot::feature(int class_num) const noexcept {
         return feature;
     }
     return feature / sum;
-}
-
-std::ostream& operator<<(std::ostream& os, const Robot& robot) {
-    os << "Robot: { ";
-    os << "Label: "
-       << (robot.label_.has_value() ? std::to_string(robot.label_.value())
-                                    : "None")
-       << ", ";
-    os << "Rect: "
-       << (robot.rect_.has_value()
-               ? cv::format("[%f, %f, %f, %f]", robot.rect_.value().x,
-                            robot.rect_.value().y, robot.rect_.value().width,
-                            robot.rect_.value().height)
-               : "None")
-       << ", ";
-    os << "Confidence: "
-       << (robot.confidence_.has_value()
-               ? std::to_string(robot.confidence_.value())
-               : "None")
-       << ", ";
-    os << "State: "
-       << (!robot.track_state_.has_value()                       ? "None"
-           : robot.track_state_.value() == TrackState::Confirmed ? "Confirmed"
-           : robot.track_state_.value() == TrackState::Tentative ? "Tentative"
-                                                                 : "Deleted")
-       << ", ";
-    os << "Location: "
-       << (robot.location_.has_value()
-               ? cv::format("[%f, %f, %f]", robot.location_.value().x,
-                            robot.location_.value().y,
-                            robot.location_.value().z)
-               : "None");
-    os << " }";
-    return os;
 }
 
 }  // namespace radar

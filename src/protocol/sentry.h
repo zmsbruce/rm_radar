@@ -19,7 +19,7 @@
 namespace radar::protocol {
 
 /**
- * @brief A structure representing the Sentry Protocol for radar communication.
+ * @brief A structure representing the protocol for radar-sentry communication.
  *
  * This structure holds the 3D positional data (x, y, z coordinates) for various
  * units in both the red and blue teams, including heroes, engineers, infantry,
@@ -38,9 +38,27 @@ struct SentryProtocol {
      * indicates that the structure has grown beyond the specified limit.
      */
     SentryProtocol() {
-        static_assert(sizeof(SentryProtocol) < 112,
+        static_assert(sizeof(SentryProtocol) <= 112,
                       "Size of sentry protocol out of range");
     }
+
+    /// @brief Remaining time of the match (0 if not in match)
+    uint16_t remaining_time = 0;
+
+    /**
+     * @brief Flag for radar and sentry.
+     *
+     * For radar, its first bit represents for whether radar is triggering
+     * double vulnerability, and its second bit represents for whether radar
+     * has currently received data from sentry. The third to the eighth bit
+     * represents for whether hero, engineer, standard 3~5 and sentry is marked
+     * as vulnerable (mark progress more than 100). Other bits are currently
+     * remained.
+     *
+     * TODO: For Sentry
+     *
+     */
+    uint16_t flag = 0;
 
     /// @brief Red team's hero position (x coordinate).
     uint16_t red_hero_x = 0;

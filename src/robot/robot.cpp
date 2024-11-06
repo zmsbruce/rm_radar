@@ -18,10 +18,6 @@
 
 namespace radar {
 
-Robot::Robot(const Detection& car, const std::vector<Detection>& armors) {
-    setDetection(car, armors);
-}
-
 void Robot::setDetection(const Detection& car,
                          const std::vector<Detection>& armors) noexcept {
     // Sets the bbox of car

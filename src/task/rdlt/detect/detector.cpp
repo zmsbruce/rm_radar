@@ -528,7 +528,8 @@ std::vector<Robot> RobotDetector::detect(const cv::Mat& image) noexcept {
     for (size_t i = 0; i < car_detections.size(); ++i) {
         spdlog::trace("Processing robot for car detection {}.", i);
 
-        Robot robot(car_detections[i], armor_detections_batch[i]);
+        Robot robot;
+        robot.setDetection(car_detections[i], armor_detections_batch[i]);
         if (!robot.isDetected()) {
             spdlog::debug("Robot detection failed for car {}.", i);
             robots.emplace_back(robot);

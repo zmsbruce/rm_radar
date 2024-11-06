@@ -53,16 +53,6 @@ class Robot {
     };
 
     /**
-     * @brief Construct the robot with the detection result, setting the
-     * detection variables of the robot, which include the vector of armor
-     * detections as well as the label, confidence and bbox of the robot.
-     *
-     * @param car The detected car information.
-     * @param armors Vector of detected armor infomation.
-     */
-    Robot(const Detection& car, const std::vector<Detection>& armors);
-
-    /**
      * @brief Default robot constructor.
      */
     Robot() = default;

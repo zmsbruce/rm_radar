@@ -23,8 +23,11 @@ namespace radar::protocol {
  *
  * This structure holds the 3D positional data (x, y, z coordinates) for various
  * units in both the red and blue teams, including heroes, engineers, infantry,
- * and sentries. The structure is packed to ensure no padding is added between
- * members, and its size is asserted to be less than 112 bytes.
+ * and sentries. It also includes positions for unidentified robots
+ * (referred to as "other_robot"), which may represent robots that have not been
+ * assigned a specific role or whose category cannot be determined (e.g., robots
+ * with zero health). The structure is packed to ensure no padding is added
+ * between members, and its size is asserted to be less than 112 bytes.
  */
 struct SentryProtocol {
     /**
@@ -40,88 +43,130 @@ struct SentryProtocol {
     }
 
     /// @brief Red team's hero position (x coordinate).
-    uint16_t red_hero_x;
+    uint16_t red_hero_x = 0;
     /// @brief Red team's hero position (y coordinate).
-    uint16_t red_hero_y;
+    uint16_t red_hero_y = 0;
     /// @brief Red team's hero position (z coordinate).
-    uint16_t red_hero_z;
+    uint16_t red_hero_z = 0;
 
     /// @brief Red team's engineer position (x coordinate).
-    uint16_t red_engineer_x;
+    uint16_t red_engineer_x = 0;
     /// @brief Red team's engineer position (y coordinate).
-    uint16_t red_engineer_y;
+    uint16_t red_engineer_y = 0;
     /// @brief Red team's engineer position (z coordinate).
-    uint16_t red_engineer_z;
+    uint16_t red_engineer_z = 0;
 
     /// @brief Red team's infantry 3 position (x coordinate).
-    uint16_t red_infantry_3_x;
+    uint16_t red_infantry_3_x = 0;
     /// @brief Red team's infantry 3 position (y coordinate).
-    uint16_t red_infantry_3_y;
+    uint16_t red_infantry_3_y = 0;
     /// @brief Red team's infantry 3 position (z coordinate).
-    uint16_t red_infantry_3_z;
+    uint16_t red_infantry_3_z = 0;
 
     /// @brief Red team's infantry 4 position (x coordinate).
-    uint16_t red_infantry_4_x;
+    uint16_t red_infantry_4_x = 0;
     /// @brief Red team's infantry 4 position (y coordinate).
-    uint16_t red_infantry_4_y;
+    uint16_t red_infantry_4_y = 0;
     /// @brief Red team's infantry 4 position (z coordinate).
-    uint16_t red_infantry_4_z;
+    uint16_t red_infantry_4_z = 0;
 
     /// @brief Red team's infantry 5 position (x coordinate).
-    uint16_t red_infantry_5_x;
+    uint16_t red_infantry_5_x = 0;
     /// @brief Red team's infantry 5 position (y coordinate).
-    uint16_t red_infantry_5_y;
+    uint16_t red_infantry_5_y = 0;
     /// @brief Red team's infantry 5 position (z coordinate).
-    uint16_t red_infantry_5_z;
+    uint16_t red_infantry_5_z = 0;
 
     /// @brief Red team's sentry position (x coordinate).
-    uint16_t red_sentry_x;
+    uint16_t red_sentry_x = 0;
     /// @brief Red team's sentry position (y coordinate).
-    uint16_t red_sentry_y;
+    uint16_t red_sentry_y = 0;
     /// @brief Red team's sentry position (z coordinate).
-    uint16_t red_sentry_z;
+    uint16_t red_sentry_z = 0;
 
     /// @brief Blue team's hero position (x coordinate).
-    uint16_t blue_hero_x;
+    uint16_t blue_hero_x = 0;
     /// @brief Blue team's hero position (y coordinate).
-    uint16_t blue_hero_y;
+    uint16_t blue_hero_y = 0;
     /// @brief Blue team's hero position (z coordinate).
-    uint16_t blue_hero_z;
+    uint16_t blue_hero_z = 0;
 
     /// @brief Blue team's engineer position (x coordinate).
-    uint16_t blue_engineer_x;
+    uint16_t blue_engineer_x = 0;
     /// @brief Blue team's engineer position (y coordinate).
-    uint16_t blue_engineer_y;
+    uint16_t blue_engineer_y = 0;
     /// @brief Blue team's engineer position (z coordinate).
-    uint16_t blue_engineer_z;
+    uint16_t blue_engineer_z = 0;
 
     /// @brief Blue team's infantry 3 position (x coordinate).
-    uint16_t blue_infantry_3_x;
+    uint16_t blue_infantry_3_x = 0;
     /// @brief Blue team's infantry 3 position (y coordinate).
-    uint16_t blue_infantry_3_y;
+    uint16_t blue_infantry_3_y = 0;
     /// @brief Blue team's infantry 3 position (z coordinate).
-    uint16_t blue_infantry_3_z;
+    uint16_t blue_infantry_3_z = 0;
 
     /// @brief Blue team's infantry 4 position (x coordinate).
-    uint16_t blue_infantry_4_x;
+    uint16_t blue_infantry_4_x = 0;
     /// @brief Blue team's infantry 4 position (y coordinate).
-    uint16_t blue_infantry_4_y;
+    uint16_t blue_infantry_4_y = 0;
     /// @brief Blue team's infantry 4 position (z coordinate).
-    uint16_t blue_infantry_4_z;
+    uint16_t blue_infantry_4_z = 0;
 
     /// @brief Blue team's infantry 5 position (x coordinate).
-    uint16_t blue_infantry_5_x;
+    uint16_t blue_infantry_5_x = 0;
     /// @brief Blue team's infantry 5 position (y coordinate).
-    uint16_t blue_infantry_5_y;
+    uint16_t blue_infantry_5_y = 0;
     /// @brief Blue team's infantry 5 position (z coordinate).
-    uint16_t blue_infantry_5_z;
+    uint16_t blue_infantry_5_z = 0;
 
     /// @brief Blue team's sentry position (x coordinate).
-    uint16_t blue_sentry_x;
+    uint16_t blue_sentry_x = 0;
     /// @brief Blue team's sentry position (y coordinate).
-    uint16_t blue_sentry_y;
+    uint16_t blue_sentry_y = 0;
     /// @brief Blue team's sentry position (z coordinate).
-    uint16_t blue_sentry_z;
+    uint16_t blue_sentry_z = 0;
+
+    /// @brief Unidentified robot 1 position (x coordinate).
+    uint16_t other_robot_1_x = 0;
+    /// @brief Unidentified robot 1 position (y coordinate).
+    uint16_t other_robot_1_y = 0;
+    /// @brief Unidentified robot 1 position (z coordinate).
+    uint16_t other_robot_1_z = 0;
+
+    /// @brief Unidentified robot 2 position (x coordinate).
+    uint16_t other_robot_2_x = 0;
+    /// @brief Unidentified robot 2 position (y coordinate).
+    uint16_t other_robot_2_y = 0;
+    /// @brief Unidentified robot 2 position (z coordinate).
+    uint16_t other_robot_2_z = 0;
+
+    /// @brief Unidentified robot 3 position (x coordinate).
+    uint16_t other_robot_3_x = 0;
+    /// @brief Unidentified robot 3 position (y coordinate).
+    uint16_t other_robot_3_y = 0;
+    /// @brief Unidentified robot 3 position (z coordinate).
+    uint16_t other_robot_3_z = 0;
+
+    /// @brief Unidentified robot 4 position (x coordinate).
+    uint16_t other_robot_4_x = 0;
+    /// @brief Unidentified robot 4 position (y coordinate).
+    uint16_t other_robot_4_y = 0;
+    /// @brief Unidentified robot 4 position (z coordinate).
+    uint16_t other_robot_4_z = 0;
+
+    /// @brief Unidentified robot 5 position (x coordinate).
+    uint16_t other_robot_5_x = 0;
+    /// @brief Unidentified robot 5 position (y coordinate).
+    uint16_t other_robot_5_y = 0;
+    /// @brief Unidentified robot 5 position (z coordinate).
+    uint16_t other_robot_5_z = 0;
+
+    /// @brief Unidentified robot 6 position (x coordinate).
+    uint16_t other_robot_6_x = 0;
+    /// @brief Unidentified robot 6 position (y coordinate).
+    uint16_t other_robot_6_y = 0;
+    /// @brief Unidentified robot 6 position (z coordinate).
+    uint16_t other_robot_6_z = 0;
 };
 
 // Restore default byte padding

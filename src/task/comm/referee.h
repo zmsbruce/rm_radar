@@ -9,9 +9,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../../../third_party/FastCRC/src/FastCRC.h"
 #include "driver/serial/serial.h"
 #include "protocol/referee_system.h"
 #include "robot/robot.h"
+
+// 为了避免使用livox驱动里的FastCRC.h，这里将其注释掉
+#define FASTCRC_FASTCRC_H_
 
 namespace radar {
 
@@ -50,8 +54,12 @@ class RefereeCommunicator {
     // Disable default constructor
     RefereeCommunicator() = delete;
 
+    bool encode(CommandCode cmd, std::vector<std::byte>&& data);
+
+    bool encode(SubContentId id, Id receiver, std::vector<std::byte>&& data);
+
     /**
-     * @brief Parse the data received from the referee system.
+     * @brief Decode the datagram received from the referee system.
      */
     bool decode();
 
@@ -62,7 +70,7 @@ class RefereeCommunicator {
      * @param data raw_data
      * @param
      */
-    bool fetchData(std::span<std::byte> data, Id command_id);
+    bool fetchData(std::span<std::byte> data, CommandCode command_id);
 
     /**
      * @brief Judge whether the robot is an enemy.

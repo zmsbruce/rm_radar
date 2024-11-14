@@ -535,7 +535,7 @@ std::vector<Robot> RobotDetector::detect(const cv::Mat& image) noexcept {
             robots.emplace_back(robot);
             continue;
         }
-        int label = robot.label().value();
+        int label = static_cast<int>(robot.label().value());
         spdlog::trace("Detected robot with label {}.", label);
 
         if (!robots_map.contains(label)) {

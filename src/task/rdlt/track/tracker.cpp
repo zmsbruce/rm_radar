@@ -157,8 +157,8 @@ void Tracker::update(
             calculateDistance(robot.location().value(), track.location());
         spdlog::trace("Distance between robot {} and track {}: {}", robot_id,
                       track_id, distance);
-        if (distance > 2 * distance_thresh_ &&
-            robot.label().value_or(-1) != track.label()) {
+        if (distance > 2 * distance_thresh_ && robot.label().has_value() &&
+            static_cast<int>(robot.label().value()) != track.label()) {
             spdlog::debug(
                 "Robot {} and track {} are not sufficiently close or have "
                 "mismatched labels, adding to unmatched robots",

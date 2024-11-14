@@ -42,34 +42,33 @@ RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     std::memset(radar_info_.get(), 0, sizeof(radar_info_t));
     std::memset(sentry_data_.get(), 0, sizeof(robot_interaction_data_t));
 
-    if (!serial_->open()) {
-        throw new std::runtime_error("Failed to open serial port.");
-    }
-
     spdlog::trace("Referee communicator initialized.");
+}
+
+bool RefereeCommunicator::init() {
+    if (!serial_->open()) {
+        spdlog::error("Failed to init RefereeCommunicator.");
+    }
+    return serial_->isOpen();
 }
 
 void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
     map_robot_data_t data;
     std::memset(&data, 0, sizeof(data));
-    for (const auto& robot : robots) {
+
+    auto filtered_robots =
+        robots | std::ranges::views::filter([](const Robot& robot) {
+            return robot.label().has_value() && robot.isLocated();
+        });
+
+    for (const auto& robot : filtered_robots) {
         std::optional<Robot::Label> label = robot.label();
 
-        if (!label.has_value()) {
-            spdlog::debug("Robot without label.");
-            continue;
-        } else if (!isEnemy(label.value())) {
+        if (!isEnemy(label.value())) {  // 跳过友军
             continue;
         }
 
-        if (!robot.location().has_value()) {
-            // TODO:没有坐标时的处理
-            spdlog::debug("Robot without location.");
-            continue;
-        }
-
-        // TODO: 这里坐标单位还没搞清楚，暂时按原来写
-        cv::Point3f point = robot.location().value();
+        cv::Point3f point = robot.location().value();  // 需要从米转换为厘米
         uint16_t x = static_cast<uint16_t>(point.x * 100);
         uint16_t y = static_cast<uint16_t>(point.y * 100);
 
@@ -138,14 +137,13 @@ bool RefereeCommunicator::encode(CommandCode cmd,
         return false;
     }
     int length = (data.size() + 15) * 4;
-    std::vector<std::byte> buff;
-    buff.emplace_back(0xA5);
-    buff.emplace_back(data.size());
-    buff.emplace_back(data.size() >> 8u);
-    buff.emplace_back(0x00);
-    appendCRC8(buff);
-    buff.emplace_back(cmd);
-    buff.emplace_back(static_cast<uint16_t>(cmd) >> 8u);
+    std::vector<std::byte> buff(7, std::byte{0x00});
+    buff[0] = std::byte{0xA5};
+    buff[1] = std::byte{data.size()};
+    buff[2] = std::byte{data.size() >> 8u};
+    appendCRC8(std::span<std::byte>(buff.data(), 5));
+    buff[5] = std::byte{static_cast<uint16_t>(cmd)};
+    buff[6] = std::byte{static_cast<uint16_t>(cmd) >> 8u};
     buff.insert(buff.end(), std::make_move_iterator(data.begin()),
                 std::make_move_iterator(data.end()));
     appendCRC16(buff);
@@ -162,20 +160,19 @@ bool RefereeCommunicator::encode(SubContentId id, Id receiver,
 
     auto cmd = CommandCode::RobotInteraction;
     int length = (data.size() + 15) * 4;
-    std::vector<std::byte> buff;
-    buff.emplace_back(0xA5);
-    buff.emplace_back(data.size() + 6);
-    buff.emplace_back((data.size() + 6) >> 8u);
-    buff.emplace_back(0x00);
-    appendCRC8(buff);
-    buff.emplace_back(cmd);
-    buff.emplace_back(static_cast<uint16_t>(cmd) >> 8u);
-    buff.emplace_back(id);
-    buff.emplace_back(static_cast<uint16_t>(id) >> 8u);
-    buff.emplace_back(radar_status_->robot_id);
-    buff.emplace_back(radar_status_->robot_id >> 8u);
-    buff.emplace_back(receiver);
-    buff.emplace_back(static_cast<uint16_t>(receiver) >> 8u);
+    std::vector<std::byte> buff(13, std::byte{0x00});
+    buff[0] = std::byte{0xA5};
+    buff[1] = std::byte{data.size() + 6};
+    buff[2] = std::byte{(data.size() + 6) >> 8u};
+    appendCRC8(std::span<std::byte>(buff.data(), 5));
+    buff[4] = std::byte{static_cast<uint16_t>(cmd)};
+    buff[5] = std::byte{static_cast<uint16_t>(cmd) >> 8u};
+    buff[6] = std::byte{static_cast<uint16_t>(id)};
+    buff[7] = std::byte{static_cast<uint16_t>(id) >> 8u};
+    buff[8] = std::byte{static_cast<uint16_t>(radar_status_->robot_id)};
+    buff[9] = std::byte{static_cast<uint16_t>(radar_status_->robot_id) >> 8u};
+    buff[10] = std::byte{static_cast<uint16_t>(receiver)};
+    buff[11] = std::byte{static_cast<uint16_t>(receiver) >> 8u};
     buff.insert(buff.end(), std::make_move_iterator(data.begin()),
                 std::make_move_iterator(data.end()));
     appendCRC16(buff);
@@ -210,9 +207,8 @@ bool RefereeCommunicator::decode() {
                 messageBuffer.push_back(dataByte);
                 if (messageBuffer.size() == 3) {
                     dataLength =  // TODO:能不能优雅一点
-                        static_cast<uint16_t>(
-                            static_cast<uint8_t>(messageBuffer[2]) << 8) |
-                        static_cast<uint8_t>(messageBuffer[1]);
+                        static_cast<uint16_t>(messageBuffer[2]) << 8 |
+                        static_cast<uint16_t>(messageBuffer[1]);
                 }
                 if (messageBuffer.size() == 7 + dataLength) {
                     if (verifyCRC8(
@@ -330,15 +326,15 @@ bool RefereeCommunicator::isEnemy(Robot::Label label) {
 
 void RefereeCommunicator::appendCRC8(std::span<std::byte> data) {
     static FastCRC8 crc8;
-    auto crc = crc8.smbus_upd(reinterpret_cast<const uint8_t*>(data.data()),
-                              data.size() - 1);
+    auto crc = crc8.smbus(reinterpret_cast<const uint8_t*>(data.data()),
+                          data.size() - 1);
     data[data.size() - 1] = std::byte(crc);
 }
 
 void RefereeCommunicator::appendCRC16(std::span<std::byte> data) {
     static FastCRC16 crc16;
-    auto crc = crc16.mcrf4xx_upd(reinterpret_cast<const uint8_t*>(data.data()),
-                                 data.size() - 2);
+    auto crc = crc16.mcrf4xx(reinterpret_cast<const uint8_t*>(data.data()),
+                             data.size() - 2);
     data[data.size() - 2] = std::byte(crc);
     data[data.size() - 1] = std::byte(crc >> 8u);
 }
@@ -354,8 +350,8 @@ bool RefereeCommunicator::verifyCRC16(std::span<const std::byte> data) {
     static FastCRC16 crc16;
     return crc16.mcrf4xx(reinterpret_cast<const uint8_t*>(data.data()),
                          data.size() - 2) ==
-           static_cast<uint16_t>(static_cast<uint8_t>(data[data.size() - 2]) |
-                                 static_cast<uint8_t>(data[data.size() - 1])
+           static_cast<uint16_t>(static_cast<uint16_t>(data[data.size() - 2]) |
+                                 static_cast<uint16_t>(data[data.size() - 1])
                                      << 8u);
 }
 

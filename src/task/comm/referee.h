@@ -3,19 +3,17 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <ranges>
 #include <shared_mutex>
 #include <span>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "../../../third_party/FastCRC/src/FastCRC.h"
+#include "FastCRC/src/FastCRC.h"
 #include "driver/serial/serial.h"
 #include "protocol/referee_system.h"
 #include "robot/robot.h"
-
-// 为了避免使用livox驱动里的FastCRC.h，这里将其注释掉
-#define FASTCRC_FASTCRC_H_
 
 namespace radar {
 
@@ -30,6 +28,11 @@ class RefereeCommunicator {
      * @param serial_addr The name of the serial device (e.g., "/dev/ttyUSB0").
      */
     RefereeCommunicator(std::string_view serial_addr);
+
+    /**
+     * @brief Try to open serial ports.
+     */
+    bool init();
 
     /**
      * @brief Send the position data of the robot to the referee system.
@@ -54,9 +57,10 @@ class RefereeCommunicator {
     // Disable default constructor
     RefereeCommunicator() = delete;
 
-    bool encode(CommandCode cmd, std::vector<std::byte>&& data);
+    bool encode(protocol::CommandCode cmd, std::vector<std::byte>&& data);
 
-    bool encode(SubContentId id, Id receiver, std::vector<std::byte>&& data);
+    bool encode(protocol::SubContentId id, protocol::Id receiver,
+                std::vector<std::byte>&& data);
 
     /**
      * @brief Decode the datagram received from the referee system.
@@ -70,7 +74,7 @@ class RefereeCommunicator {
      * @param data raw_data
      * @param
      */
-    bool fetchData(std::span<std::byte> data, CommandCode command_id);
+    bool fetchData(std::span<std::byte> data, protocol::CommandCode command_id);
 
     /**
      * @brief Judge whether the robot is an enemy.

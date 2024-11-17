@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "FastCRC/src/FastCRC.h"
 #include "driver/serial/serial.h"
 #include "protocol/referee_system.h"
 #include "robot/robot.h"
@@ -28,11 +27,6 @@ class RefereeCommunicator {
      * @param serial_addr The name of the serial device (e.g., "/dev/ttyUSB0").
      */
     RefereeCommunicator(std::string_view serial_addr);
-
-    /**
-     * @brief Try to open serial ports.
-     */
-    bool init();
 
     /**
      * @brief Send the position data of the robot to the referee system.
@@ -57,15 +51,16 @@ class RefereeCommunicator {
     // Disable default constructor
     RefereeCommunicator() = delete;
 
-    bool encode(protocol::CommandCode cmd, std::vector<std::byte>&& data);
+    bool encode(protocol::CommandCode cmd,
+                std::vector<std::byte>&& data) noexcept;
 
     bool encode(protocol::SubContentId id, protocol::Id receiver,
-                std::vector<std::byte>&& data);
+                std::vector<std::byte>&& data) noexcept;
 
     /**
      * @brief Decode the datagram received from the referee system.
      */
-    bool decode();
+    bool decode() noexcept;
 
     /**
      * @brief Update the corresponding member variables according to the data

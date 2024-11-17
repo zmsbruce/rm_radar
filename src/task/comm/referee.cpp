@@ -2,14 +2,16 @@
 
 #include <spdlog/spdlog.h>
 
-#include "FastCRC.h"
+#include <magic_enum/magic_enum.hpp>
+
+#include "crc.h"
 
 namespace radar {
 
 using namespace protocol;
 using namespace serial;
 
-constexpr size_t BUFFER_SIZE = 1024;
+constexpr size_t BUFFER_SIZE = 128;
 
 RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     : serial_(std::make_unique<Serial>(serial_addr,
@@ -42,14 +44,11 @@ RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     std::memset(radar_info_.get(), 0, sizeof(radar_info_t));
     std::memset(sentry_data_.get(), 0, sizeof(robot_interaction_data_t));
 
-    spdlog::trace("Referee communicator initialized.");
-}
-
-bool RefereeCommunicator::init() {
     if (!serial_->open()) {
         spdlog::error("Failed to init RefereeCommunicator.");
     }
-    return serial_->isOpen();
+
+    spdlog::trace("Referee communicator initialized.");
 }
 
 void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
@@ -68,8 +67,10 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
             continue;
         }
 
-        cv::Point3f point = robot.location().value();  // 需要从米转换为厘米
-        uint16_t x = static_cast<uint16_t>(point.x * 100);
+        spdlog::debug("Send location of {} to referee: ",
+                      magic_enum::enum_name(label.value()));
+        cv::Point3f point = robot.location().value();
+        uint16_t x = static_cast<uint16_t>(point.x * 100);  // m->cm
         uint16_t y = static_cast<uint16_t>(point.y * 100);
 
         switch (label.value()) {
@@ -111,23 +112,30 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
             }
         }
     }
+
+    std::vector<std::byte> sendData(
+        reinterpret_cast<std::byte*>(&data),
+        reinterpret_cast<std::byte*>(&data) + sizeof(data));
+    encode(CommandCode::MapRobot, std::move(sendData));
+    spdlog::debug("Send map robot data to referee.");
 }
 
 void RefereeCommunicator::update() {
     if (!this->serial_->isOpen()) {
         return;
     }
-    bool suc = this->serial_->read(this->data_buffer_);
-    if (suc) {
-        decode();
-        spdlog::debug("");
+    if (this->serial_->read(this->data_buffer_)) {
+        if (!decode()) {
+            spdlog::info("Failed to decode data from serial port.");
+        }
+        spdlog::debug("Read data from serial port.");
     } else {
-        spdlog::debug("");
+        spdlog::debug("Failed to read data from serial port.");
     }
 }
 
 bool RefereeCommunicator::encode(CommandCode cmd,
-                                 std::vector<std::byte>&& data) {
+                                 std::vector<std::byte>&& data) noexcept {
     static const std::vector<CommandCode> CMD4SEND{
         CommandCode::RobotInteraction, CommandCode::MapRobot,
         CommandCode::CustomInfo};
@@ -146,6 +154,7 @@ bool RefereeCommunicator::encode(CommandCode cmd,
     buff[6] = std::byte{static_cast<uint16_t>(cmd) >> 8u};
     buff.insert(buff.end(), std::make_move_iterator(data.begin()),
                 std::make_move_iterator(data.end()));
+    buff.resize(buff.size() + 2);
     appendCRC16(buff);
     bool isSuccess = this->serial_->write(buff);
     // TODO: 线程调度
@@ -153,7 +162,7 @@ bool RefereeCommunicator::encode(CommandCode cmd,
 }
 
 bool RefereeCommunicator::encode(SubContentId id, Id receiver,
-                                 std::vector<std::byte>&& data) {
+                                 std::vector<std::byte>&& data) noexcept {
     static const std::vector<SubContentId> CONTENT4SEND{
         SubContentId::RobotCommunication, SubContentId::RadarCommand,
         SubContentId::RadarToSentry};
@@ -175,13 +184,14 @@ bool RefereeCommunicator::encode(SubContentId id, Id receiver,
     buff[11] = std::byte{static_cast<uint16_t>(receiver) >> 8u};
     buff.insert(buff.end(), std::make_move_iterator(data.begin()),
                 std::make_move_iterator(data.end()));
+    buff.resize(buff.size() + 2);
     appendCRC16(buff);
     bool isSuccess = this->serial_->write(buff);
     // TODO: 线程调度
     return isSuccess;
 }
 
-bool RefereeCommunicator::decode() {
+bool RefereeCommunicator::decode() noexcept {
     static DecodeStatus status = DecodeStatus::Free;
     static std::vector<std::byte> messageBuffer;
     static size_t dataLength = 0;
@@ -191,13 +201,16 @@ bool RefereeCommunicator::decode() {
 
     decoded = false;
     dataLength = 0;
+    spdlog::trace("Decoding data from serial port.");
     for (size_t i = 0; i < this->data_buffer_.size(); i++) {
         std::byte dataByte = this->data_buffer_[i];
+        spdlog::info("Received data: {}", static_cast<uint8_t>(dataByte));
 
         switch (status) {
             case DecodeStatus::Free: {
                 messageBuffer.clear();
                 if (dataByte == beginFlag) {
+                    spdlog::info("Received begin flag.");
                     messageBuffer.push_back(dataByte);
                     status = DecodeStatus::Length;
                 }
@@ -206,34 +219,38 @@ bool RefereeCommunicator::decode() {
             case DecodeStatus::Length: {
                 messageBuffer.push_back(dataByte);
                 if (messageBuffer.size() == 3) {
-                    dataLength =  // TODO:能不能优雅一点
-                        static_cast<uint16_t>(messageBuffer[2]) << 8 |
-                        static_cast<uint16_t>(messageBuffer[1]);
+                    dataLength = static_cast<uint16_t>(messageBuffer[2]) << 8 |
+                                 static_cast<uint16_t>(messageBuffer[1]);
+                    spdlog::info("Received data length: {}", dataLength);
                 }
-                if (messageBuffer.size() == 7 + dataLength) {
-                    if (verifyCRC8(
-                            std::span<std::byte>(messageBuffer.data(), 5))) {
+                if (messageBuffer.size() == 5) {
+                    if (verifyCRC8(messageBuffer)) {
                         status = DecodeStatus::CRC16;
+                        spdlog::info("CRC8 verified.");
                     } else {
                         status = DecodeStatus::Free;
+                        spdlog::info("CRC8 verification failed.");
                     }
                 }
                 break;
             }
             case DecodeStatus::CRC16: {
                 messageBuffer.push_back(dataByte);
-                if (messageBuffer.size() == 9 + dataLength) {
+                if (messageBuffer.size() == 7) {
+                    commandId = static_cast<uint16_t>(messageBuffer[6]) << 8 |
+                                static_cast<uint16_t>(messageBuffer[5]);
+                    spdlog::trace("Received command: {}",
+                                  magic_enum::enum_name(
+                                      static_cast<CommandCode>(commandId)));
+                } else if (messageBuffer.size() == 9 + dataLength) {
                     if (verifyCRC16(messageBuffer)) {
-                        commandId =
-                            static_cast<uint16_t>(
-                                static_cast<uint8_t>(messageBuffer[6]) << 8) |
-                            static_cast<uint8_t>(messageBuffer[5]);
                         fetchData(
                             std::span<std::byte>(messageBuffer.data() + 7,
                                                  messageBuffer.size() - 7),
                             static_cast<CommandCode>(commandId));
-                        status = DecodeStatus::Free;
                         decoded = true;
+                    } else {
+                        spdlog::info("CRC16 verification failed.");
                     }
                     status = DecodeStatus::Free;
                 }
@@ -324,32 +341,29 @@ bool RefereeCommunicator::isEnemy(Robot::Label label) {
                                                                 : isBlue;
 }
 
-void RefereeCommunicator::appendCRC8(std::span<std::byte> data) {
-    static FastCRC8 crc8;
-    auto crc = crc8.smbus(reinterpret_cast<const uint8_t*>(data.data()),
-                          data.size() - 1);
+void RefereeCommunicator::appendCRC8(
+    std::span<std::byte> data) {  // 裁判系统使用8541多项式
+    auto crc = CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
+                              data.size() - 1);
     data[data.size() - 1] = std::byte(crc);
 }
 
 void RefereeCommunicator::appendCRC16(std::span<std::byte> data) {
-    static FastCRC16 crc16;
-    auto crc = crc16.mcrf4xx(reinterpret_cast<const uint8_t*>(data.data()),
-                             data.size() - 2);
+    auto crc = CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
+                               data.size() - 2);
     data[data.size() - 2] = std::byte(crc);
     data[data.size() - 1] = std::byte(crc >> 8u);
 }
 
 bool RefereeCommunicator::verifyCRC8(std::span<const std::byte> data) {
-    static FastCRC8 crc8;
-    return crc8.smbus(reinterpret_cast<const uint8_t*>(data.data()),
-                      data.size() - 1) ==
+    return CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
+                          data.size() - 1) ==
            static_cast<uint8_t>(data[data.size() - 1]);
 }
 
 bool RefereeCommunicator::verifyCRC16(std::span<const std::byte> data) {
-    static FastCRC16 crc16;
-    return crc16.mcrf4xx(reinterpret_cast<const uint8_t*>(data.data()),
-                         data.size() - 2) ==
+    return CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
+                           data.size() - 2) ==
            static_cast<uint16_t>(static_cast<uint16_t>(data[data.size() - 2]) |
                                  static_cast<uint16_t>(data[data.size() - 1])
                                      << 8u);

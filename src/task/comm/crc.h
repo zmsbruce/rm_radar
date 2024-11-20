@@ -71,7 +71,8 @@ uint8_t CRC8_Check_Sum(const uint8_t *data, size_t datalen) {
 uint16_t CRC16_Check_Sum(const uint8_t *data, size_t datalen) {
     uint16_t crc = CRC16_INIT;
     while (datalen--) {
-        crc = (crc >> 8) ^ CRC16_Table[(crc & 0xff) ^ *data++];
+        crc = (crc >> 8) ^ CRC16_Table[(crc ^ (*data++)) & 0xff];
+        // crc = (crc >> 8) ^ CRC16_Table[(crc & 0xff) ^ *data++];
     }
     return crc;
 }

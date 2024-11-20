@@ -10,7 +10,6 @@ target_include_directories(comm_test PRIVATE
 target_link_libraries(comm_test PRIVATE
     ${OpenCV_LIBS}
     communicator
-    fastcrc
     GTest::gtest_main
 )
 

@@ -44,11 +44,22 @@ RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     std::memset(radar_info_.get(), 0, sizeof(radar_info_t));
     std::memset(sentry_data_.get(), 0, sizeof(robot_interaction_data_t));
 
-    if (!serial_->open()) {
-        spdlog::error("Failed to init RefereeCommunicator.");
+    this->is_connected_ = serial_->open();
+
+    if (!this->is_connected_) {
+        spdlog::warn(
+            "Failed to init RefereeCommunicator: serial port open failed");
     }
 
     spdlog::trace("Referee communicator initialized.");
+}
+
+bool RefereeCommunicator::reconnect() {
+    if (serial_->isOpen()) {
+        return true;
+    }
+    this->is_connected_ = serial_->open();
+    return this->is_connected_;
 }
 
 void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
@@ -67,7 +78,7 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
             continue;
         }
 
-        spdlog::debug("Send location of {} to referee: ",
+        spdlog::debug("Send location of {} to referee system: ",
                       magic_enum::enum_name(label.value()));
         cv::Point3f point = robot.location().value();
         uint16_t x = static_cast<uint16_t>(point.x * 100);  // m->cm
@@ -116,21 +127,23 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
     std::vector<std::byte> sendData(
         reinterpret_cast<std::byte*>(&data),
         reinterpret_cast<std::byte*>(&data) + sizeof(data));
-    encode(CommandCode::MapRobot, std::move(sendData));
+    if (!encode(CommandCode::MapRobot, std::move(sendData))) {
+        spdlog::error("Failed to encode map robot data");
+    };
     spdlog::debug("Send map robot data to referee.");
 }
 
 void RefereeCommunicator::update() {
-    if (!this->serial_->isOpen()) {
+    if (!this->is_connected_) {
         return;
     }
     if (this->serial_->read(this->data_buffer_)) {
         if (!decode()) {
-            spdlog::info("Failed to decode data from serial port.");
+            spdlog::warn("Failed to decode data from serial port.");
         }
         spdlog::debug("Read data from serial port.");
     } else {
-        spdlog::debug("Failed to read data from serial port.");
+        spdlog::error("Failed to read data from serial port.");
     }
 }
 
@@ -140,10 +153,15 @@ bool RefereeCommunicator::encode(CommandCode cmd,
         CommandCode::RobotInteraction, CommandCode::MapRobot,
         CommandCode::CustomInfo};
 
-    if (!this->serial_->isOpen() ||
-        std::find(CMD4SEND.begin(), CMD4SEND.end(), cmd) == CMD4SEND.end()) {
+    if (!this->is_connected_) {
+        spdlog::warn("Attempted to encode with closed serial.");
+        return false;
+    } else if (std::find(CMD4SEND.begin(), CMD4SEND.end(), cmd) ==
+               CMD4SEND.end()) {
+        spdlog::warn("Request for encoding with unknown command.");
         return false;
     }
+
     int length = (data.size() + 15) * 4;
     std::vector<std::byte> buff(7, std::byte{0x00});
     buff[0] = std::byte{0xA5};
@@ -166,6 +184,15 @@ bool RefereeCommunicator::encode(SubContentId id, Id receiver,
     static const std::vector<SubContentId> CONTENT4SEND{
         SubContentId::RobotCommunication, SubContentId::RadarCommand,
         SubContentId::RadarToSentry};
+
+    if (!this->is_connected_) {
+        spdlog::warn("Attempted to encode with closed serial.");
+        return false;
+    } else if (std::find(CONTENT4SEND.begin(), CONTENT4SEND.end(), id) ==
+               CONTENT4SEND.end()) {
+        spdlog::warn("Request for encoding with unknown subcommand.");
+        return false;
+    }
 
     auto cmd = CommandCode::RobotInteraction;
     int length = (data.size() + 15) * 4;
@@ -195,7 +222,7 @@ bool RefereeCommunicator::decode() noexcept {
     static DecodeStatus status = DecodeStatus::Free;
     static std::vector<std::byte> messageBuffer;
     static size_t dataLength = 0;
-    static uint16_t commandId;
+    static uint16_t command_id;
     static bool decoded;
     static std::byte beginFlag{0xA5};
 
@@ -204,13 +231,13 @@ bool RefereeCommunicator::decode() noexcept {
     spdlog::trace("Decoding data from serial port.");
     for (size_t i = 0; i < this->data_buffer_.size(); i++) {
         std::byte dataByte = this->data_buffer_[i];
-        spdlog::info("Received data: {}", static_cast<uint8_t>(dataByte));
+        spdlog::trace("Received data: {}", static_cast<uint8_t>(dataByte));
 
         switch (status) {
             case DecodeStatus::Free: {
                 messageBuffer.clear();
                 if (dataByte == beginFlag) {
-                    spdlog::info("Received begin flag.");
+                    spdlog::trace("Received begin flag.");
                     messageBuffer.push_back(dataByte);
                     status = DecodeStatus::Length;
                 }
@@ -221,15 +248,15 @@ bool RefereeCommunicator::decode() noexcept {
                 if (messageBuffer.size() == 3) {
                     dataLength = static_cast<uint16_t>(messageBuffer[2]) << 8 |
                                  static_cast<uint16_t>(messageBuffer[1]);
-                    spdlog::info("Received data length: {}", dataLength);
+                    spdlog::trace("Received data length: {}", dataLength);
                 }
                 if (messageBuffer.size() == 5) {
                     if (verifyCRC8(messageBuffer)) {
                         status = DecodeStatus::CRC16;
-                        spdlog::info("CRC8 verified.");
+                        spdlog::trace("CRC8 verified.");
                     } else {
                         status = DecodeStatus::Free;
-                        spdlog::info("CRC8 verification failed.");
+                        spdlog::trace("CRC8 verification failed.");
                     }
                 }
                 break;
@@ -237,20 +264,21 @@ bool RefereeCommunicator::decode() noexcept {
             case DecodeStatus::CRC16: {
                 messageBuffer.push_back(dataByte);
                 if (messageBuffer.size() == 7) {
-                    commandId = static_cast<uint16_t>(messageBuffer[6]) << 8 |
-                                static_cast<uint16_t>(messageBuffer[5]);
+                    command_id = static_cast<uint16_t>(messageBuffer[6]) << 8 |
+                                 static_cast<uint16_t>(messageBuffer[5]);
                     spdlog::trace("Received command: {}",
                                   magic_enum::enum_name(
-                                      static_cast<CommandCode>(commandId)));
+                                      static_cast<CommandCode>(command_id)));
                 } else if (messageBuffer.size() == 9 + dataLength) {
                     if (verifyCRC16(messageBuffer)) {
                         fetchData(
                             std::span<std::byte>(messageBuffer.data() + 7,
                                                  messageBuffer.size() - 7),
-                            static_cast<CommandCode>(commandId));
+                            static_cast<CommandCode>(command_id));
                         decoded = true;
+                        spdlog::trace("CRC16 verified");
                     } else {
-                        spdlog::info("CRC16 verification failed.");
+                        spdlog::trace("CRC16 verification failed.");
                     }
                     status = DecodeStatus::Free;
                 }
@@ -263,64 +291,61 @@ bool RefereeCommunicator::decode() noexcept {
 
 bool RefereeCommunicator::fetchData(std::span<std::byte> data,
                                     CommandCode command_id) {
+    spdlog::trace("Fetch data with command: {}",
+                  magic_enum::enum_name(static_cast<CommandCode>(command_id)));
     switch (command_id) {
         case CommandCode::GameStatus: {
             std::memcpy(&this->game_status_, data.data(), data.size());
             break;
         }
         case CommandCode::GameResult: {
-            memcpy(&this->game_result_, data.data(), data.size());
+            std::memcpy(&this->game_result_, data.data(), data.size());
             break;
         }
         case CommandCode::GameRobotHP: {
-            memcpy(&this->robot_health_point_, data.data(), data.size());
+            std::memcpy(&this->robot_health_point_, data.data(), data.size());
             break;
         }
         case CommandCode::Event: {
-            memcpy(&this->event_data_, data.data(), data.size());
+            std::memcpy(&this->event_data_, data.data(), data.size());
             break;
         }
         case CommandCode::SupplyProjectileAction: {
-            memcpy(&this->projectile_action_, data.data(), data.size());
+            std::memcpy(&this->projectile_action_, data.data(), data.size());
             break;
         }
         case CommandCode::RefereeWarning: {
-            memcpy(&this->referee_warning_, data.data(), data.size());
+            std::memcpy(&this->referee_warning_, data.data(), data.size());
             break;
         }
         case CommandCode::DartInfo: {
-            memcpy(&this->dart_info_, data.data(), data.size());
+            std::memcpy(&this->dart_info_, data.data(), data.size());
             break;
         }
         case CommandCode::RobotStatus: {
-            memcpy(&this->radar_status_, data.data(), data.size());
+            std::memcpy(&this->radar_status_, data.data(), data.size());
             break;
         }
         case CommandCode::RadarMark: {
-            memcpy(&this->radar_mark_data_, data.data(), data.size());
+            std::memcpy(&this->radar_mark_data_, data.data(), data.size());
             break;
         }
         case CommandCode::RadarInfo: {
-            memcpy(&this->radar_info_, data.data(), data.size());
+            std::memcpy(&this->radar_info_, data.data(), data.size());
             // TODO: 队列确认
             break;
         }
         case CommandCode::RobotInteraction: {
             auto dataCmdId = *reinterpret_cast<SubContentId*>(data.data());
-            switch (dataCmdId) {
-                case SubContentId::RobotCommunication: {
-                    break;
-                }
-                case SubContentId::Sentry: {
-                    break;
-                }
-            }
+            std::memcpy(&this->sentry_data_, data.data(), data.size());
             break;
         }
         default: {
+            spdlog::error("Fetch data with unknown type of command");
             break;
         }
     }
+    this->last_receive_timestamp_ = std::chrono::system_clock::now();
 }
 
 bool RefereeCommunicator::isEnemy(Robot::Label label) {

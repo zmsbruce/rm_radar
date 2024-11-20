@@ -29,9 +29,16 @@ class RefereeCommunicator {
     RefereeCommunicator(std::string_view serial_addr);
 
     /**
+     * @brief Try to reopen serial port after init failed.
+     *
+     * @return Whether the reconnection success or not
+     */
+    bool reconnect();
+
+    /**
      * @brief Send the position data of the robot to the referee system.
      *
-     * @param robots robot objects ready to be sent
+     * @param robots Robot objects ready to be sent
      */
     void sendMapRobot(const std::span<const Robot> robots);
 
@@ -51,14 +58,34 @@ class RefereeCommunicator {
     // Disable default constructor
     RefereeCommunicator() = delete;
 
+    /**
+     * @brief Encode and send datagram with specific command format
+     *
+     * @param cmd Type of command to be encoded
+     * @param data Raw data that contains bytes of command type data
+     *
+     * @return Flag indicating if send successfully
+     */
     bool encode(protocol::CommandCode cmd,
                 std::vector<std::byte>&& data) noexcept;
 
+    /**
+     * @brief Receive data sent by the referee system and update internal
+     * variables.
+     *
+     * @param id Subcommand type
+     * @param receiver Robot to send datagram to
+     * @param data Raw data that contains bytes of command type data
+     *
+     * @return Flag indicating if send successfully
+     */
     bool encode(protocol::SubContentId id, protocol::Id receiver,
                 std::vector<std::byte>&& data) noexcept;
 
     /**
      * @brief Decode the datagram received from the referee system.
+     *
+     * @return Flag indicating if send successfully
      */
     bool decode() noexcept;
 
@@ -66,29 +93,58 @@ class RefereeCommunicator {
      * @brief Update the corresponding member variables according to the data
      * and command code.
      *
-     * @param data raw_data
-     * @param
+     * @param data raw data
+     * @param command_id command type indicating which field is used
+     *
+     * @return Flag indicating if send successfully
      */
-    bool fetchData(std::span<std::byte> data, protocol::CommandCode command_id);
+    bool fetchData(std::span<std::byte> data,
+                   protocol::CommandCode command_id) noexcept;
 
     /**
      * @brief Judge whether the robot is an enemy.
      *
      * @param label label of robot to be judged
+     *
+     * @return Flag indicating if robot is enemy
      */
-    bool isEnemy(Robot::Label label);
+    bool isEnemy(Robot::Label label) noexcept;
 
-    // 添加 CRC8 校验，注意将 data 的前 n-1 位视为数据，第 n 位为你添加的校验位
-    static void appendCRC8(std::span<std::byte> data);
+    /**
+     * @brief Append 8 bit of CRC to data
+     *
+     * @param data if raw data has length of n, then length of data should be
+     * n+1 for append CRC bit
+     */
+    static void appendCRC8(std::span<std::byte> data) noexcept;
 
-    // 添加 CRC16 校验
-    static void appendCRC16(std::span<std::byte> data);
+    /**
+     * @brief Append 16 bit of CRC to data
+     *
+     * @param data if raw data has length of n, then length of data should be
+     * n+2 for append CRC bit
+     */
+    static void appendCRC16(std::span<std::byte> data) noexcept;
 
-    // 验证 CRC8 校验
-    static bool verifyCRC8(std::span<const std::byte> data);
+    /**
+     * @brief Verify 8 bit CRC of data
+     *
+     * @param data if data has length of n, then n-1 byte from start will be
+     * used as raw data
+     *
+     * @return Flag indicating if CRC8 verified
+     */
+    static bool verifyCRC8(std::span<const std::byte> data) noexcept;
 
-    // 验证 CRC16 校验
-    static bool verifyCRC16(std::span<const std::byte> data);
+    /**
+     * @brief Verify 16 bit CRC of data
+     *
+     * @param data if data has length of n, then n-2 byte from start will be
+     * used as raw data
+     *
+     * @return Flag indicating if CRC16 verified
+     */
+    static bool verifyCRC16(std::span<const std::byte> data) noexcept;
 
     /// Serial object for handling serial port operations
     std::unique_ptr<serial::Serial> serial_;

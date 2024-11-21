@@ -290,7 +290,7 @@ bool RefereeCommunicator::decode() noexcept {
 }
 
 bool RefereeCommunicator::fetchData(std::span<std::byte> data,
-                                    CommandCode command_id) {
+                                    CommandCode command_id) noexcept {
     spdlog::trace("Fetch data with command: {}",
                   magic_enum::enum_name(static_cast<CommandCode>(command_id)));
     switch (command_id) {
@@ -348,15 +348,15 @@ bool RefereeCommunicator::fetchData(std::span<std::byte> data,
     this->last_receive_timestamp_ = std::chrono::system_clock::now();
 }
 
-bool RefereeCommunicator::isEnemy(Robot::Label label) {
+bool RefereeCommunicator::isEnemy(Robot::Label label) noexcept {
     static const std::vector<Robot::Label> BLUE_LABELS{
         Robot::Label::BlueEngineer,      Robot::Label::BlueHero,
         Robot::Label::BlueInfantryFive,  Robot::Label::BlueInfantryFour,
         Robot::Label::BlueInfantryThree, Robot::Label::BlueSentry};
 
     int radarId = this->radar_status_->robot_id;  // TODO:并发控制
-    assert(radarId == static_cast<int>(protocol::Id::RadarBlue) ||
-           radarId == static_cast<int>(protocol::Id::RadarRed));
+    // assert(radarId == static_cast<int>(protocol::Id::RadarBlue) ||
+    //        radarId == static_cast<int>(protocol::Id::RadarRed));
 
     bool isBlue = std::find(BLUE_LABELS.begin(), BLUE_LABELS.end(), label) !=
                   BLUE_LABELS.end();
@@ -367,26 +367,27 @@ bool RefereeCommunicator::isEnemy(Robot::Label label) {
 }
 
 void RefereeCommunicator::appendCRC8(
-    std::span<std::byte> data) {  // 裁判系统使用8541多项式
+    std::span<std::byte> data) noexcept {  // 裁判系统使用8541多项式
     auto crc = CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                               data.size() - 1);
     data[data.size() - 1] = std::byte(crc);
 }
 
-void RefereeCommunicator::appendCRC16(std::span<std::byte> data) {
+void RefereeCommunicator::appendCRC16(std::span<std::byte> data) noexcept {
     auto crc = CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                                data.size() - 2);
     data[data.size() - 2] = std::byte(crc);
     data[data.size() - 1] = std::byte(crc >> 8u);
 }
 
-bool RefereeCommunicator::verifyCRC8(std::span<const std::byte> data) {
+bool RefereeCommunicator::verifyCRC8(std::span<const std::byte> data) noexcept {
     return CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                           data.size() - 1) ==
            static_cast<uint8_t>(data[data.size() - 1]);
 }
 
-bool RefereeCommunicator::verifyCRC16(std::span<const std::byte> data) {
+bool RefereeCommunicator::verifyCRC16(
+    std::span<const std::byte> data) noexcept {
     return CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                            data.size() - 2) ==
            static_cast<uint16_t>(static_cast<uint16_t>(data[data.size() - 2]) |

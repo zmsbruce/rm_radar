@@ -12,13 +12,7 @@
 #undef protected
 
 class EncoderTest : public ::testing::Test {
-   private:
-   protected:
-    std::unique_ptr<radar::RefereeCommunicator> comm = nullptr;
-
-    virtual void SetUp() {
-        comm = std::make_unique<radar::RefereeCommunicator>("/dev/ttyUSB0");
-    }
+    virtual void SetUp() {}
 };
 
 TEST_F(EncoderTest, TestEncode) {}

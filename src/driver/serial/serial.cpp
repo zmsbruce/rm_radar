@@ -66,6 +66,7 @@ bool Serial::open() {
     try {
         // Open the serial port and set the baud rate.
         serial_port_.Open(device_name_);
+        // 波特率115200, 8 位数据位，1 位停止位，无硬件流控，无校验位。
         serial_port_.SetBaudRate(baud_rate_);
         serial_port_.SetCharacterSize(LibSerial::CharacterSize::CHAR_SIZE_8);
         serial_port_.SetFlowControl(

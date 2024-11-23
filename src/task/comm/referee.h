@@ -43,6 +43,26 @@ class RefereeCommunicator {
     void sendMapRobot(const std::span<const Robot> robots);
 
     /**
+     * @brief Send the game status data to the referee system.
+     */
+    void sendToPlayer(int id, std::u16string text);
+
+    /**
+     * @brief Send the attack command to the referee system.
+     */
+    void sendCommand();
+
+    /**
+     * @brief Send data to the sentry.
+     */
+    void sendToSentry(const std::vector<Robot>& robots, bool dartWarning);
+
+    /**
+     * @brief Send data to other robot.
+     */
+    void sendToRobot(protocol::Id robot_id, std::byte data);
+
+    /**
      * @brief Receive data sent by the referee system and update internal
      * variables.
      */
@@ -57,6 +77,13 @@ class RefereeCommunicator {
 
     // Disable default constructor
     RefereeCommunicator() = delete;
+
+    /**
+     * @brief Get the id of radar.
+     *
+     * @return The id of radar
+     */
+    uint8_t getRadarId() noexcept;
 
     /**
      * @brief Encode and send datagram with specific command format
@@ -185,6 +212,9 @@ class RefereeCommunicator {
 
     /// Decision-making data of Radar
     std::shared_ptr<protocol::radar_info_t> radar_info_;
+
+    /// Container for radar qualification data
+    std::deque<int> qualifications;
 
     /// Robot interaction data from sentry
     std::shared_ptr<protocol::robot_interaction_data_t> sentry_data_;

@@ -16,15 +16,14 @@
 
 #include <spdlog/spdlog.h>
 
-#include <magic_enum/magic_enum.hpp>
-
 namespace radar::serial {
 
 Serial::Serial(std::string_view device_name, LibSerial::BaudRate baud_rate)
     : device_name_(device_name), baud_rate_(baud_rate) {
-    // FIXME: magic_enum 在这里会返回空字符串，实际内容是正确的
     spdlog::debug("Serial parameters: device name: {}, baud rate: {}",
-                  device_name_, magic_enum::enum_name(baud_rate_));
+                  device_name_,
+                  (baud_rate_ == LibSerial::BaudRate::BAUD_115200) ? "115200"
+                                                                   : "unknown");
     spdlog::trace("Serial {} initialized.", device_name_);
 }
 
@@ -76,7 +75,9 @@ bool Serial::open() {
 
         is_open_ = true;  // Mark the serial port as open.
         spdlog::info("Serial {} opened with baud rate: {}.", device_name_,
-                     magic_enum::enum_name(baud_rate_));
+                     (baud_rate_ == LibSerial::BaudRate::BAUD_115200)
+                         ? "115200"
+                         : "unknown");
         return true;
     } catch (const LibSerial::OpenFailed& err) {
         spdlog::error("Failed to open serial {}: {}", device_name_, err.what());
@@ -113,9 +114,6 @@ bool Serial::read(std::vector<std::byte>& buffer) {
     }
 
     try {
-        // std::lock_guard<std::mutex> lock(serial_mutex_);
-        spdlog::debug("Serial {} lock acquired.", device_name_);
-
         spdlog::trace("Serial {} will read with buffer size: {}", device_name_,
                       buffer.size());
 
@@ -147,9 +145,6 @@ bool Serial::write(const std::span<const std::byte> data) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(serial_mutex_);
-        spdlog::debug("Serial {} lock acquired.", device_name_);
-
         spdlog::trace("Serial {} will write with data size: {}", device_name_,
                       data.size());
 

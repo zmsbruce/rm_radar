@@ -11,7 +11,7 @@ namespace radar {
 using namespace protocol;
 using namespace serial;
 
-constexpr size_t BUFFER_SIZE = 128;
+constexpr size_t BUFFER_SIZE = 1024;
 
 RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     : serial_(std::make_unique<Serial>(serial_addr,
@@ -78,8 +78,8 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
             continue;
         }
 
-        spdlog::debug("Send location of {} to referee system: ",
-                      magic_enum::enum_name(label.value()));
+        spdlog::info("Send location of {} to referee system: ",
+                     magic_enum::enum_name(label.value()));
         cv::Point3f point = robot.location().value();
         uint16_t x = static_cast<uint16_t>(point.x * 100);  // m->cm
         uint16_t y = static_cast<uint16_t>(point.y * 100);
@@ -133,6 +133,92 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
     spdlog::debug("Send map robot data to referee.");
 }
 
+void RefereeCommunicator::sendToPlayer(int id, std::u16string text) {
+    // TODO: 自定义消息
+}
+
+void RefereeCommunicator::sendCommand() {
+    static auto lastCommandTime = std::chrono::steady_clock::now();
+    static uint8_t radarCommand = 0;
+
+    std::map<int, int> counter;
+    for (int val : this->qualifications) {
+        counter[val] += 1;
+    }
+    if (std::max_element(counter.begin(), counter.end(),
+                         [](const auto& p1, const auto& p2) {
+                             return p1.second < p2.second;
+                         })
+            ->first == 0) {
+        spdlog::trace("No qualification in radar command.");
+        return;
+    }
+
+    auto nowTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+                        nowTime - lastCommandTime)
+                        .count();
+    if (duration > 30) {
+        if (radarCommand < 2) {
+            spdlog::trace("Radar command is activated.");
+            radarCommand += 1;
+            lastCommandTime = nowTime;
+        } else {
+            spdlog::trace("Radar command times has been exhausted.");
+        }
+    }
+    for (int i = 0; i < 10; ++i) {
+        encode(SubContentId::RadarCommand, Id::Server,
+               std::move(std::vector<std::byte>(1, std::byte(radarCommand))));
+    }
+}
+
+void RefereeCommunicator::sendToSentry(const std::vector<Robot>& robots,
+                                       bool dartWarning) {
+    constexpr int max_robot_num = 6;
+    constexpr int element_size = 4;
+    float mem[max_robot_num * element_size + 1] = {0};
+
+    mem[0] = static_cast<float>(dartWarning);
+
+    int offset = 0;
+    for (const auto& robot : robots) {
+        if (offset >= max_robot_num) {
+            spdlog::trace("Number of robots out of range.");
+            continue;
+        }
+        if (!robot.label().has_value() || !isEnemy(robot.label().value()) ||
+            !robot.isLocated()) {
+            continue;
+        }
+        auto location = robot.location().value();
+        mem[element_size * offset + 1] =
+            static_cast<float>(robot.label().value());
+        mem[element_size * offset + 2] = location.x;
+        mem[element_size * offset + 3] = location.y;
+        mem[element_size * offset + 4] = location.z;
+        offset += 1;
+    }
+
+    std::vector<std::byte> send_data(112, std::byte(0));
+    assert(send_data.size() >= sizeof(mem));
+
+    std::memcpy(send_data.data(), reinterpret_cast<uint8_t*>(mem), sizeof(mem));
+
+    Id sentryId = getRadarId() == static_cast<uint8_t>(Id::RadarBlue)
+                      ? Id::SentryRed
+                      : Id::SentryBlue;
+    encode(SubContentId::RadarToSentry, sentryId, std::move(send_data));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+
+void RefereeCommunicator::sendToRobot(Id robot_id, std::byte data) {
+    std::vector<std::byte> send_data;
+    send_data.push_back(data);
+
+    encode(SubContentId::RobotCommunication, robot_id, std::move(send_data));
+}
+
 void RefereeCommunicator::update() {
     if (!this->is_connected_) {
         return;
@@ -145,6 +231,11 @@ void RefereeCommunicator::update() {
     } else {
         spdlog::error("Failed to read data from serial port.");
     }
+}
+
+uint8_t RefereeCommunicator::getRadarId() noexcept {
+    std::unique_lock<std::shared_mutex> lock(comm_mutex_);
+    return radar_status_->robot_id;
 }
 
 bool RefereeCommunicator::encode(CommandCode cmd,
@@ -227,7 +318,6 @@ bool RefereeCommunicator::decode() noexcept {
     static std::byte beginFlag{0xA5};
 
     decoded = false;
-    dataLength = 0;
     spdlog::trace("Decoding data from serial port.");
     for (size_t i = 0; i < this->data_buffer_.size(); i++) {
         std::byte dataByte = this->data_buffer_[i];
@@ -273,7 +363,7 @@ bool RefereeCommunicator::decode() noexcept {
                     if (verifyCRC16(messageBuffer)) {
                         fetchData(
                             std::span<std::byte>(messageBuffer.data() + 7,
-                                                 messageBuffer.size() - 7),
+                                                 messageBuffer.size() - 9),
                             static_cast<CommandCode>(command_id));
                         decoded = true;
                         spdlog::trace("CRC16 verified");
@@ -291,57 +381,70 @@ bool RefereeCommunicator::decode() noexcept {
 
 bool RefereeCommunicator::fetchData(std::span<std::byte> data,
                                     CommandCode command_id) noexcept {
-    spdlog::trace("Fetch data with command: {}",
-                  magic_enum::enum_name(static_cast<CommandCode>(command_id)));
+    std::unique_lock<std::shared_mutex> lock(comm_mutex_);
     switch (command_id) {
         case CommandCode::GameStatus: {
-            std::memcpy(&this->game_status_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: GameStatus");
+            std::memcpy(game_status_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::GameResult: {
-            std::memcpy(&this->game_result_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: GameResult");
+            std::memcpy(game_result_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::GameRobotHP: {
-            std::memcpy(&this->robot_health_point_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: GameRobotHP");
+            std::memcpy(robot_health_point_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::Event: {
-            std::memcpy(&this->event_data_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: Event");
+            std::memcpy(event_data_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::SupplyProjectileAction: {
-            std::memcpy(&this->projectile_action_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: SupplyProjectileAction");
+            std::memcpy(projectile_action_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::RefereeWarning: {
-            std::memcpy(&this->referee_warning_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: RefereeWarning");
+            std::memcpy(referee_warning_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::DartInfo: {
-            std::memcpy(&this->dart_info_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: DartInfo");
+            std::memcpy(dart_info_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::RobotStatus: {
-            std::memcpy(&this->radar_status_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: RobotStatus");
+            std::memcpy(radar_status_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::RadarMark: {
-            std::memcpy(&this->radar_mark_data_, data.data(), data.size());
+            spdlog::debug("Fetching data with command: RadarMark");
+            std::memcpy(radar_mark_data_.get(), data.data(), data.size());
             break;
         }
         case CommandCode::RadarInfo: {
-            std::memcpy(&this->radar_info_, data.data(), data.size());
-            // TODO: 队列确认
+            spdlog::debug("Fetching data with command: RadarInfo");
+            std::memcpy(radar_info_.get(), data.data(), data.size());
+            this->qualifications.emplace_back(radar_info_->radar_info &
+                                              0b00000011);
+            if (this->qualifications.size() > 4) {
+                this->qualifications.pop_front();
+            }
             break;
         }
         case CommandCode::RobotInteraction: {
+            spdlog::debug("Fetching data with command: RobotInteraction");
             auto dataCmdId = *reinterpret_cast<SubContentId*>(data.data());
-            std::memcpy(&this->sentry_data_, data.data(), data.size());
+            std::memcpy(sentry_data_.get(), data.data(), data.size());
             break;
         }
-        default: {
-            spdlog::error("Fetch data with unknown type of command");
+        default: {  // 其他类型命令，暂不处理
             break;
         }
     }
@@ -354,9 +457,11 @@ bool RefereeCommunicator::isEnemy(Robot::Label label) noexcept {
         Robot::Label::BlueInfantryFive,  Robot::Label::BlueInfantryFour,
         Robot::Label::BlueInfantryThree, Robot::Label::BlueSentry};
 
-    int radarId = this->radar_status_->robot_id;  // TODO:并发控制
-    // assert(radarId == static_cast<int>(protocol::Id::RadarBlue) ||
-    //        radarId == static_cast<int>(protocol::Id::RadarRed));
+    uint8_t radarId = getRadarId();
+    if (radarId == 0) {
+        spdlog::warn("Radar id not set.");
+        return false;
+    }
 
     bool isBlue = std::find(BLUE_LABELS.begin(), BLUE_LABELS.end(), label) !=
                   BLUE_LABELS.end();

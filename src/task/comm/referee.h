@@ -54,11 +54,17 @@ class RefereeCommunicator {
 
     /**
      * @brief Send data to the sentry.
+     *
+     * @param robots Robot objects ready to be sent
+     * @param dartWarning Flag indicating if dart warning is triggered
      */
     void sendToSentry(const std::vector<Robot>& robots, bool dartWarning);
 
     /**
      * @brief Send data to other robot.
+     *
+     * @param robot_id Id of robot to send data to
+     * @param data Data to be sent
      */
     void sendToRobot(protocol::Id robot_id, std::byte data);
 

@@ -114,9 +114,9 @@ class Robot {
      *
      * @return The `std::optional` value of the label.
      */
-    inline std::optional<int> label() const noexcept {
+    inline std::optional<Robot::Label> label() const noexcept {
         return label_.has_value()
-                   ? std::make_optional<int>(static_cast<int>(label_.value()))
+                   ? std::make_optional<Robot::Label>(label_.value())
                    : std::nullopt;
     }
 

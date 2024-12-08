@@ -72,7 +72,7 @@ class Serial {
      * @param buffer A span of bytes to store the read data.
      * @return true if data was successfully read, false otherwise.
      */
-    bool read(std::span<std::byte> buffer);
+    bool read(std::vector<std::byte>& buffer);
 
     /**
      * @brief Writes data to the serial port.

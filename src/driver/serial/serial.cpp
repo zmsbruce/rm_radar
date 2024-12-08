@@ -16,14 +16,14 @@
 
 #include <spdlog/spdlog.h>
 
-#include <magic_enum/magic_enum.hpp>
-
 namespace radar::serial {
 
 Serial::Serial(std::string_view device_name, LibSerial::BaudRate baud_rate)
     : device_name_(device_name), baud_rate_(baud_rate) {
     spdlog::debug("Serial parameters: device name: {}, baud rate: {}",
-                  device_name_, magic_enum::enum_name(baud_rate_));
+                  device_name_,
+                  (baud_rate_ == LibSerial::BaudRate::BAUD_115200) ? "115200"
+                                                                   : "unknown");
     spdlog::trace("Serial {} initialized.", device_name_);
 }
 
@@ -65,11 +65,19 @@ bool Serial::open() {
     try {
         // Open the serial port and set the baud rate.
         serial_port_.Open(device_name_);
+        // 波特率115200, 8 位数据位，1 位停止位，无硬件流控，无校验位。
         serial_port_.SetBaudRate(baud_rate_);
+        serial_port_.SetCharacterSize(LibSerial::CharacterSize::CHAR_SIZE_8);
+        serial_port_.SetFlowControl(
+            LibSerial::FlowControl::FLOW_CONTROL_DEFAULT);
+        serial_port_.SetParity(LibSerial::Parity::PARITY_DEFAULT);
+        serial_port_.SetStopBits(LibSerial::StopBits::STOP_BITS_DEFAULT);
 
         is_open_ = true;  // Mark the serial port as open.
         spdlog::info("Serial {} opened with baud rate: {}.", device_name_,
-                     magic_enum::enum_name(baud_rate_));
+                     (baud_rate_ == LibSerial::BaudRate::BAUD_115200)
+                         ? "115200"
+                         : "unknown");
         return true;
     } catch (const LibSerial::OpenFailed& err) {
         spdlog::error("Failed to open serial {}: {}", device_name_, err.what());
@@ -99,25 +107,27 @@ void Serial::close() {
     }
 }
 
-bool Serial::read(std::span<std::byte> buffer) {
+bool Serial::read(std::vector<std::byte>& buffer) {
     if (!isOpen()) {
         spdlog::error("Attempted to read from closed serial {}", device_name_);
         return false;
     }
 
     try {
-        std::lock_guard<std::mutex> lock(serial_mutex_);
-        spdlog::debug("Serial {} lock acquired.", device_name_);
-
         spdlog::trace("Serial {} will read with buffer size: {}", device_name_,
                       buffer.size());
 
         // Prepare the buffer for reading data from the serial port.
-        auto buffer_ptr = reinterpret_cast<uint8_t*>(buffer.data());
-        LibSerial::DataBuffer data_buffer(buffer_ptr,
-                                          buffer_ptr + buffer.size());
+        LibSerial::DataBuffer data_buffer(
+            reinterpret_cast<uint8_t*>(buffer.data()),
+            reinterpret_cast<uint8_t*>(buffer.data()) + buffer.size());
 
         serial_port_.Read(data_buffer, buffer.size());  // Read into the buffer.
+
+        buffer.assign(reinterpret_cast<std::byte*>(data_buffer.data()),
+                      reinterpret_cast<std::byte*>(data_buffer.data()) +
+                          data_buffer.size());
+
         spdlog::debug("Buffer read successfully from serial {}", device_name_);
 
         return true;
@@ -135,9 +145,6 @@ bool Serial::write(const std::span<const std::byte> data) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(serial_mutex_);
-        spdlog::debug("Serial {} lock acquired.", device_name_);
-
         spdlog::trace("Serial {} will write with data size: {}", device_name_,
                       data.size());
 

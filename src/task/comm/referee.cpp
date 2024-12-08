@@ -55,9 +55,6 @@ RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
 }
 
 bool RefereeCommunicator::reconnect() {
-    if (serial_->isOpen()) {
-        return true;
-    }
     this->is_connected_ = serial_->open();
     return this->is_connected_;
 }
@@ -78,8 +75,8 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
             continue;
         }
 
-        spdlog::info("Send location of {} to referee system: ",
-                     magic_enum::enum_name(label.value()));
+        spdlog::debug("Send location of {} to referee system: ",
+                      magic_enum::enum_name(label.value()));
         cv::Point3f point = robot.location().value();
         uint16_t x = static_cast<uint16_t>(point.x * 100);  // m->cm
         uint16_t y = static_cast<uint16_t>(point.y * 100);
@@ -124,9 +121,11 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
         }
     }
 
-    std::vector<std::byte> sendData(
-        reinterpret_cast<std::byte*>(&data),
-        reinterpret_cast<std::byte*>(&data) + sizeof(data));
+    std::vector<std::byte> sendData;
+    const std::byte* start = reinterpret_cast<const std::byte*>(&data);
+    const std::byte* end = reinterpret_cast<const std::byte*>(&data + 1);
+    sendData.assign(start, end);
+
     if (!encode(CommandCode::MapRobot, std::move(sendData))) {
         spdlog::error("Failed to encode map robot data");
     };
@@ -134,7 +133,21 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
 }
 
 void RefereeCommunicator::sendToPlayer(int id, std::u16string text) {
-    // TODO: 自定义消息
+    std::vector<std::byte> sendData;
+    uint16_t send_id = getRadarId();
+    uint16_t receive_id = static_cast<uint16_t>(id);
+    size_t size = text.length() > 15 ? 15 : text.size();
+
+    sendData.resize(sizeof(custom_info_t));
+    memcpy(sendData.data(), &send_id, sizeof(uint16_t));
+    memcpy(sendData.data() + sizeof(uint16_t), &receive_id, sizeof(uint16_t));
+    memcpy(sendData.data() + 2 * sizeof(uint16_t), text.data(),
+           size * sizeof(uint16_t));
+
+    if (!encode(CommandCode::CustomInfo, std::move(sendData))) {
+        spdlog::error("Failed to encode custom info data");
+    }
+    spdlog::debug("Send custom info data to referee.");
 }
 
 void RefereeCommunicator::sendCommand() {
@@ -150,7 +163,7 @@ void RefereeCommunicator::sendCommand() {
                              return p1.second < p2.second;
                          })
             ->first == 0) {
-        spdlog::trace("No qualification in radar command.");
+        spdlog::trace("No qualification to send radar command.");
         return;
     }
 
@@ -265,9 +278,7 @@ bool RefereeCommunicator::encode(CommandCode cmd,
                 std::make_move_iterator(data.end()));
     buff.resize(buff.size() + 2);
     appendCRC16(buff);
-    bool isSuccess = this->serial_->write(buff);
-    // TODO: 线程调度
-    return isSuccess;
+    return this->serial_->write(buff);
 }
 
 bool RefereeCommunicator::encode(SubContentId id, Id receiver,
@@ -283,30 +294,36 @@ bool RefereeCommunicator::encode(SubContentId id, Id receiver,
                CONTENT4SEND.end()) {
         spdlog::warn("Request for encoding with unknown subcommand.");
         return false;
+    } else if (getRadarId() == 0) {
+        spdlog::warn("Radar ID is not set.");
+        return false;
+    } else if (data.size() > 112) {
+        spdlog::warn("Data size exceeds maximum limit.");
+        return false;
     }
+    spdlog::info("Encoding data with subcommand: {}", static_cast<int>(id));
 
     auto cmd = CommandCode::RobotInteraction;
-    int length = (data.size() + 15) * 4;
+    int radar_id = getRadarId();
     std::vector<std::byte> buff(13, std::byte{0x00});
     buff[0] = std::byte{0xA5};
     buff[1] = std::byte{data.size() + 6};
     buff[2] = std::byte{(data.size() + 6) >> 8u};
     appendCRC8(std::span<std::byte>(buff.data(), 5));
-    buff[4] = std::byte{static_cast<uint16_t>(cmd)};
-    buff[5] = std::byte{static_cast<uint16_t>(cmd) >> 8u};
-    buff[6] = std::byte{static_cast<uint16_t>(id)};
-    buff[7] = std::byte{static_cast<uint16_t>(id) >> 8u};
-    buff[8] = std::byte{static_cast<uint16_t>(radar_status_->robot_id)};
-    buff[9] = std::byte{static_cast<uint16_t>(radar_status_->robot_id) >> 8u};
-    buff[10] = std::byte{static_cast<uint16_t>(receiver)};
-    buff[11] = std::byte{static_cast<uint16_t>(receiver) >> 8u};
+    buff[5] = std::byte{static_cast<uint16_t>(cmd)};
+    buff[6] = std::byte{static_cast<uint16_t>(cmd) >> 8u};
+
+    buff[7] = std::byte{static_cast<uint16_t>(id)};
+    buff[8] = std::byte{static_cast<uint16_t>(id) >> 8u};
+    buff[9] = std::byte{static_cast<uint16_t>(radar_id)};
+    buff[10] = std::byte{static_cast<uint16_t>(radar_id) >> 8u};
+    buff[11] = std::byte{static_cast<uint16_t>(receiver)};
+    buff[12] = std::byte{static_cast<uint16_t>(receiver) >> 8u};
     buff.insert(buff.end(), std::make_move_iterator(data.begin()),
                 std::make_move_iterator(data.end()));
     buff.resize(buff.size() + 2);
     appendCRC16(buff);
-    bool isSuccess = this->serial_->write(buff);
-    // TODO: 线程调度
-    return isSuccess;
+    return this->serial_->write(buff);
 }
 
 bool RefereeCommunicator::decode() noexcept {

@@ -1,8 +1,25 @@
+/**
+ * @file crc.h
+ * @author TianranW (529708894@qq.com)
+ * @brief This file contains the CRC8 and CRC16 checksum calculation functions.
+ * @date 2024-11-18
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #pragma once
 
 #include <iostream>
 
+/// CRC8 checksum initialization value
 const uint8_t CRC8_INIT = 0xff;
+
+/// CRC16 checksum initialization value
+const uint16_t CRC16_INIT = 0xffff;
+
+/// CRC8 lookup table
 const uint8_t CRC8_TAB[256] = {
     0x00, 0x5e, 0xbc, 0xe2, 0x61, 0x3f, 0xdd, 0x83, 0xc2, 0x9c, 0x7e, 0x20,
     0xa3, 0xfd, 0x1f, 0x41, 0x9d, 0xc3, 0x21, 0x7f, 0xfc, 0xa2, 0x40, 0x1e,
@@ -28,7 +45,7 @@ const uint8_t CRC8_TAB[256] = {
     0xd7, 0x89, 0x6b, 0x35,
 };
 
-uint16_t CRC16_INIT = 0xffff;
+/// CRC16 lookup table
 const uint16_t CRC16_Table[256] = {
     0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf, 0x8c48,
     0x9dc1, 0xaf5a, 0xbed3, 0xca6c, 0xdbe5, 0xe97e, 0xf8f7, 0x1081, 0x0108,
@@ -60,6 +77,14 @@ const uint16_t CRC16_Table[256] = {
     0xc514, 0xb1ab, 0xa022, 0x92b9, 0x8330, 0x7bc7, 0x6a4e, 0x58d5, 0x495c,
     0x3de3, 0x2c6a, 0x1ef1, 0x0f78};
 
+/**
+ * @brief Calculate the CRC8 checksum of the data.
+ *
+ * @param data The data bytes to be calculated.
+ * @param datalen The length of the data.
+ *
+ * @return The CRC8 checksum.
+ */
 uint8_t CRC8_Check_Sum(const uint8_t *data, size_t datalen) {
     uint8_t crc = CRC8_INIT;
     while (datalen--) {
@@ -68,11 +93,18 @@ uint8_t CRC8_Check_Sum(const uint8_t *data, size_t datalen) {
     return crc;
 }
 
+/**
+ * @brief Calculate the CRC16 checksum of the data.
+ *
+ * @param data The data bytes to be calculated.
+ * @param datalen The length of the data.
+ *
+ * @return The CRC16 checksum.
+ */
 uint16_t CRC16_Check_Sum(const uint8_t *data, size_t datalen) {
     uint16_t crc = CRC16_INIT;
     while (datalen--) {
         crc = (crc >> 8) ^ CRC16_Table[(crc ^ (*data++)) & 0xff];
-        // crc = (crc >> 8) ^ CRC16_Table[(crc & 0xff) ^ *data++];
     }
     return crc;
 }

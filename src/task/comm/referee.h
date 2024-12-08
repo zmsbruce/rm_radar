@@ -1,3 +1,18 @@
+/**
+ * @file crc.h
+ * @author TianranW (529708894@qq.com)
+ * @brief This file declares the `RefereeCommunicator` class, which used for
+ * communicating with the referee system. It ensures that the input data is sent
+ * out in the data format of the specified command type, and deserializes the
+ * data from the referee system into understandable structures for easy access
+ * and use.
+ * @date 2024-11-18
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #pragma once
 
 #include <atomic>
@@ -17,7 +32,10 @@
 namespace radar {
 
 /**
- * @brief
+ * @brief The RefereeCommunicator class provides the functions of sending and
+ *        receiving data based on the communication protocol of the referee
+ *        system. The accuracy of the data is ensured by Cyclic Redundancy
+ *        Check.
  */
 class RefereeCommunicator {
    public:
@@ -45,7 +63,7 @@ class RefereeCommunicator {
     /**
      * @brief Send the game status data to the referee system.
      */
-    void sendToPlayer(int id, std::u16string text);
+    void sendToPlayer(protocol::Id id, std::u16string text);
 
     /**
      * @brief Send the attack command to the referee system.
@@ -85,7 +103,7 @@ class RefereeCommunicator {
     RefereeCommunicator() = delete;
 
     /**
-     * @brief Get the id of radar.
+     * @brief Get the radar ID while ensuring thread safety.
      *
      * @return The id of radar
      */
@@ -96,20 +114,18 @@ class RefereeCommunicator {
      *
      * @param cmd Type of command to be encoded
      * @param data Raw data that contains bytes of command type data
-     *
      * @return Flag indicating if send successfully
      */
     bool encode(protocol::CommandCode cmd,
                 std::vector<std::byte>&& data) noexcept;
 
     /**
-     * @brief Receive data sent by the referee system and update internal
-     * variables.
+     * @brief Encode and send datagram with specific command and subcommand
+     * format
      *
      * @param id Subcommand type
      * @param receiver Robot to send datagram to
      * @param data Raw data that contains bytes of command type data
-     *
      * @return Flag indicating if send successfully
      */
     bool encode(protocol::SubContentId id, protocol::Id receiver,
@@ -128,7 +144,6 @@ class RefereeCommunicator {
      *
      * @param data raw data
      * @param command_id command type indicating which field is used
-     *
      * @return Flag indicating if send successfully
      */
     bool fetchData(std::span<std::byte> data,
@@ -138,7 +153,6 @@ class RefereeCommunicator {
      * @brief Judge whether the robot is an enemy.
      *
      * @param label label of robot to be judged
-     *
      * @return Flag indicating if robot is enemy
      */
     bool isEnemy(Robot::Label label) noexcept;
@@ -162,9 +176,8 @@ class RefereeCommunicator {
     /**
      * @brief Verify 8 bit CRC of data
      *
-     * @param data if data has length of n, then n-1 byte from start will be
+     * @param data if data has length of n, then n-1 bytes from start will be
      * used as raw data
-     *
      * @return Flag indicating if CRC8 verified
      */
     static bool verifyCRC8(std::span<const std::byte> data) noexcept;
@@ -172,9 +185,8 @@ class RefereeCommunicator {
     /**
      * @brief Verify 16 bit CRC of data
      *
-     * @param data if data has length of n, then n-2 byte from start will be
+     * @param data if data has length of n, then n-2 bytes from start will be
      * used as raw data
-     *
      * @return Flag indicating if CRC16 verified
      */
     static bool verifyCRC16(std::span<const std::byte> data) noexcept;

@@ -1,3 +1,17 @@
+/**
+ * @file crc.h
+ * @author TianranW (529708894@qq.com)
+ * @brief This file contains the implementation of the RefereeCommunicator
+ * class, which provides methods for decoding and encoding link data, performs
+ * full-duplex reading and writing using serial ports, and uses CRC codes to
+ * determine the correctness of the data.
+ * @date 2024-11-18
+ *
+ * @copyright (c) 2024 HITCRT
+ * All rights reserved.
+ *
+ */
+
 #include "referee.h"
 
 #include <spdlog/spdlog.h>
@@ -47,7 +61,7 @@ RefereeCommunicator::RefereeCommunicator(std::string_view serial_addr)
     this->is_connected_ = serial_->open();
 
     if (!this->is_connected_) {
-        spdlog::warn(
+        spdlog::error(
             "Failed to init RefereeCommunicator: serial port open failed");
     }
 
@@ -60,6 +74,7 @@ bool RefereeCommunicator::reconnect() {
 }
 
 void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
+    spdlog::trace("Try to send map robot data to referee system.");
     map_robot_data_t data;
     std::memset(&data, 0, sizeof(data));
 
@@ -72,10 +87,12 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
         std::optional<Robot::Label> label = robot.label();
 
         if (!isEnemy(label.value())) {  // 跳过友军
+            spdlog::trace("Location of {} is skipped.",
+                          magic_enum::enum_name(label.value()));
             continue;
         }
 
-        spdlog::debug("Send location of {} to referee system: ",
+        spdlog::trace("Sending location of {} to referee system: ",
                       magic_enum::enum_name(label.value()));
         cv::Point3f point = robot.location().value();
         uint16_t x = static_cast<uint16_t>(point.x * 100);  // m->cm
@@ -132,7 +149,9 @@ void RefereeCommunicator::sendMapRobot(const std::span<const Robot> robots) {
     spdlog::debug("Send map robot data to referee.");
 }
 
-void RefereeCommunicator::sendToPlayer(int id, std::u16string text) {
+void RefereeCommunicator::sendToPlayer(Id id, std::u16string text) {
+    spdlog::trace("Try to send custom message to player of robot with id {}.",
+                  magic_enum::enum_name(id));
     std::vector<std::byte> sendData;
     uint16_t send_id = getRadarId();
     uint16_t receive_id = static_cast<uint16_t>(id);
@@ -151,6 +170,7 @@ void RefereeCommunicator::sendToPlayer(int id, std::u16string text) {
 }
 
 void RefereeCommunicator::sendCommand() {
+    spdlog::trace("Try to send radar command to referee system.");
     static auto lastCommandTime = std::chrono::steady_clock::now();
     static uint8_t radarCommand = 0;
 
@@ -181,13 +201,18 @@ void RefereeCommunicator::sendCommand() {
         }
     }
     for (int i = 0; i < 10; ++i) {
-        encode(SubContentId::RadarCommand, Id::Server,
-               std::move(std::vector<std::byte>(1, std::byte(radarCommand))));
+        if (!encode(SubContentId::RadarCommand, Id::Server,
+                    std::move(
+                        std::vector<std::byte>(1, std::byte(radarCommand))))) {
+            spdlog::error("Failed to encode radar command data");
+        }
     }
+    spdlog::debug("Send radar command to referee.");
 }
 
 void RefereeCommunicator::sendToSentry(const std::vector<Robot>& robots,
                                        bool dartWarning) {
+    spdlog::trace("Try to send message to sentry.");
     constexpr int max_robot_num = 6;
     constexpr int element_size = 4;
     float mem[max_robot_num * element_size + 1] = {0};
@@ -221,19 +246,28 @@ void RefereeCommunicator::sendToSentry(const std::vector<Robot>& robots,
     Id sentryId = getRadarId() == static_cast<uint8_t>(Id::RadarBlue)
                       ? Id::SentryRed
                       : Id::SentryBlue;
-    encode(SubContentId::RadarToSentry, sentryId, std::move(send_data));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (!encode(SubContentId::RadarToSentry, sentryId, std::move(send_data))) {
+        spdlog::error("Failed to encode sentry data");
+    }
+    spdlog::debug("Send sentry data to referee.");
 }
 
 void RefereeCommunicator::sendToRobot(Id robot_id, std::byte data) {
+    spdlog::trace("Try to send message to robot with id {}.",
+                  magic_enum::enum_name(robot_id));
     std::vector<std::byte> send_data;
     send_data.push_back(data);
 
-    encode(SubContentId::RobotCommunication, robot_id, std::move(send_data));
+    if (encode(SubContentId::RobotCommunication, robot_id,
+               std::move(send_data))) {
+        spdlog::error("Failed to encode robot communication data");
+    }
+    spdlog::debug("Send robot communication data to referee.");
 }
 
 void RefereeCommunicator::update() {
     if (!this->is_connected_) {
+        spdlog::warn("Attempted to update with closed serial.");
         return;
     }
     if (this->serial_->read(this->data_buffer_)) {
@@ -248,6 +282,7 @@ void RefereeCommunicator::update() {
 
 uint8_t RefereeCommunicator::getRadarId() noexcept {
     std::unique_lock<std::shared_mutex> lock(comm_mutex_);
+    spdlog::trace("Get radar ID: {}", radar_status_->robot_id);
     return radar_status_->robot_id;
 }
 
@@ -265,6 +300,8 @@ bool RefereeCommunicator::encode(CommandCode cmd,
         spdlog::warn("Request for encoding with unknown command.");
         return false;
     }
+
+    spdlog::debug("Encoding data with command: {}", magic_enum::enum_name(cmd));
 
     int length = (data.size() + 15) * 4;
     std::vector<std::byte> buff(7, std::byte{0x00});
@@ -301,7 +338,8 @@ bool RefereeCommunicator::encode(SubContentId id, Id receiver,
         spdlog::warn("Data size exceeds maximum limit.");
         return false;
     }
-    spdlog::info("Encoding data with subcommand: {}", static_cast<int>(id));
+
+    spdlog::debug("Encoding data with subcommand: {}", static_cast<int>(id));
 
     auto cmd = CommandCode::RobotInteraction;
     int radar_id = getRadarId();
@@ -334,8 +372,9 @@ bool RefereeCommunicator::decode() noexcept {
     static bool decoded;
     static std::byte beginFlag{0xA5};
 
-    decoded = false;
     spdlog::trace("Decoding data from serial port.");
+
+    decoded = false;
     for (size_t i = 0; i < this->data_buffer_.size(); i++) {
         std::byte dataByte = this->data_buffer_[i];
         spdlog::trace("Received data: {}", static_cast<uint8_t>(dataByte));
@@ -461,7 +500,7 @@ bool RefereeCommunicator::fetchData(std::span<std::byte> data,
             std::memcpy(sentry_data_.get(), data.data(), data.size());
             break;
         }
-        default: {  // 其他类型命令，暂不处理
+        default: {
             break;
         }
     }
@@ -488,14 +527,15 @@ bool RefereeCommunicator::isEnemy(Robot::Label label) noexcept {
                                                                 : isBlue;
 }
 
-void RefereeCommunicator::appendCRC8(
-    std::span<std::byte> data) noexcept {  // 裁判系统使用8541多项式
+void RefereeCommunicator::appendCRC8(std::span<std::byte> data) noexcept {
+    spdlog::trace("Appending CRC8 to data with length {}.", data.size() - 1);
     auto crc = CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                               data.size() - 1);
     data[data.size() - 1] = std::byte(crc);
 }
 
 void RefereeCommunicator::appendCRC16(std::span<std::byte> data) noexcept {
+    spdlog::trace("Appending CRC16 to data with length {}.", data.size() - 2);
     auto crc = CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                                data.size() - 2);
     data[data.size() - 2] = std::byte(crc);
@@ -503,6 +543,7 @@ void RefereeCommunicator::appendCRC16(std::span<std::byte> data) noexcept {
 }
 
 bool RefereeCommunicator::verifyCRC8(std::span<const std::byte> data) noexcept {
+    spdlog::trace("Verifying CRC8 of data with length {}.", data.size() - 1);
     return CRC8_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                           data.size() - 1) ==
            static_cast<uint8_t>(data[data.size() - 1]);
@@ -510,6 +551,7 @@ bool RefereeCommunicator::verifyCRC8(std::span<const std::byte> data) noexcept {
 
 bool RefereeCommunicator::verifyCRC16(
     std::span<const std::byte> data) noexcept {
+    spdlog::trace("Verifying CRC16 of data with length {}.", data.size() - 2);
     return CRC16_Check_Sum(reinterpret_cast<const uint8_t*>(data.data()),
                            data.size() - 2) ==
            static_cast<uint16_t>(static_cast<uint16_t>(data[data.size() - 2]) |

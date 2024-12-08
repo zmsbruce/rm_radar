@@ -1,6 +1,6 @@
 find_package(OpenCV REQUIRED)
 
-add_executable(comm_test crc_test.cpp encode_test.cpp)
+add_executable(comm_test crc_test.cpp)
 
 target_include_directories(comm_test PRIVATE
     ${PROJECT_SOURCE_DIR}/src

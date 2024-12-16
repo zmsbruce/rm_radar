@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./doc/images/readme/cover.png">
+<img src="./doc/images/readme/cover.jpeg">
 </div>
 
 <br>
@@ -20,7 +20,7 @@ _<div align="right">by zmsbruce</div>_
 
 ### <div align="center"> 1. 简介 📓 </div>
 
-代码包含目标的识别、定位和跟踪，目前**不包括串口通信、自主决策部分**。
+代码包含目标的识别、定位和跟踪，目前**不包括串口通信、相机 / LiDAR 驱动、自主决策、数据存取、UI**。
 
 - **识别 🔎**：使用神经网络，根据相机传来的场地图像，对机器人和装甲板进行识别，得到机器人的矩形框和类别；
 
@@ -45,13 +45,13 @@ _<div align="right">by zmsbruce</div>_
 
 #### <div align="center"> 3.1 依赖 🔃 </div>
 
-- 在 Linux 系统下编译和安装本项目；
-- 代码基于 C++20 ，需要使用 GCC 11 或更高版本，或者 Clang 11 或更高版本；
+- 在 Linux 系统下编译和运行本项目；
+- 代码基于 C++20 ，需要使用 GCC 11 或更高版本；
 - 需要 CMake 版本不低于 3.19，以完整支持 CUDA Toolkit 包的获取与配置；
 - 需要 CUDA 版本不低于 12.2，TensorRT 版本不低于 8.5；
 - 需要 OpenCV, PCL, Eigen 库以支持图像、点云处理和目标跟踪；
 - 需要 GTest 库以支持测试；
-- 为了确保顺利编译，建议安装 TBB, VTK, FFI 库；
+- 需要安装 TBB 库以支持 GCC 下的 `std::execution`；
 
 #### <div align="center"> 3.2 编译与运行 🛠️ </div>
 

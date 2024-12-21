@@ -248,9 +248,5 @@ void SampleRadar::visualize(const Frame& frame,
     cv::namedWindow("image", cv::WINDOW_NORMAL);
     cv::resizeWindow("image", 1920, 1080);
     cv::imshow("image", image);
-
-    auto key = cv::waitKey(0);
-    if (key == 'q') {
-        std::terminate();
-    }
+    cv::waitKey(0);
 }

@@ -20,8 +20,8 @@ class DetectTest : public ::testing::Test {
 
     virtual void SetUp() {
         detector = std::make_unique<radar::Detector>(
-            model_path, 80, 10, std::nullopt, 1 << 24, 0.65f, 0.25f, 640, 640,
-            "images", 3, 0);
+            model_path, 80, cv::Size(2560, 1440), 10, std::nullopt, 0.65f,
+            0.25f, 640, 640, "images", 3, 0);
     }
 };
 

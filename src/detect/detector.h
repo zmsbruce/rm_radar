@@ -85,11 +85,10 @@ class Detector {
    public:
     Detector() = delete;
     explicit Detector(std::string_view engine_path, int classes,
-                      int max_batch_size,
+                      cv::Size image_size, int max_batch_size,
                       std::optional<int> opt_batch_size = std::nullopt,
-                      size_t image_size = 1 << 24, float nms_thresh = 0.65,
-                      float conf_thresh = 0.25, int input_width = 640,
-                      int input_height = 640,
+                      float nms_thresh = 0.65, float conf_thresh = 0.25,
+                      int input_width = 640, int input_height = 640,
                       std::string_view input_name = "images",
                       int input_channels = 3, int opt_level = 3);
     ~Detector();
@@ -173,10 +172,10 @@ class RobotDetector {
    public:
     explicit RobotDetector(
         std::string_view car_engine_path, std::string_view armor_engine_path,
-        int armor_classes, int max_cars, int opt_cars, float iou_thresh = 0.75f,
-        float car_nms_thresh = 0.65f, float car_conf_thresh = 0.25f,
-        float armor_nms_thresh = 0.65f, float armor_conf_thresh = 0.50f,
-        size_t image_size = 1 << 24, float input_width = 640,
+        cv::Size image_size, int armor_classes, int max_cars, int opt_cars,
+        float iou_thresh = 0.75f, float car_nms_thresh = 0.65f,
+        float car_conf_thresh = 0.25f, float armor_nms_thresh = 0.65f,
+        float armor_conf_thresh = 0.50f, float input_width = 640,
         float input_height = 640, std::string_view input_name = "images",
         int input_channels = 3, int opt_level = 5);
 

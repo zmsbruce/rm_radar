@@ -46,9 +46,9 @@ using namespace radar::detect;
  * engine filename does not contain delimeter "."
  */
 Detector::Detector(std::string_view engine_path, int classes,
-                   int max_batch_size, std::optional<int> opt_batch_size,
-                   size_t image_size, float nms_thresh, float conf_thresh,
-                   int input_width, int input_height,
+                   cv::Size image_size, int max_batch_size,
+                   std::optional<int> opt_batch_size, float nms_thresh,
+                   float conf_thresh, int input_width, int input_height,
                    std::string_view input_name, int input_channels,
                    int opt_level)
     : input_width_{input_width},
@@ -130,7 +130,8 @@ Detector::Detector(std::string_view engine_path, int classes,
     output_anchors_ = output_tensor_.dims().d[2];
 
     // Allocate host and device memory
-    CUDA_CHECK(cudaHostAlloc(&image_ptr_, image_size, cudaHostAllocMapped));
+    size_t image_bytes = image_size.area() * input_channels * sizeof(uint8_t);
+    CUDA_CHECK(cudaHostAlloc(&image_ptr_, image_bytes, cudaHostAllocMapped));
     CUDA_CHECK(cudaMalloc(&dev_resize_ptr_,
                           input_height * input_width * input_channels *
                               max_batch_size * sizeof(unsigned char)));
@@ -375,20 +376,20 @@ static float computeIoU(const cv::Rect2f& rect1, const cv::Rect2f& rect2) {
  */
 RobotDetector::RobotDetector(std::string_view car_engine_path,
                              std::string_view armor_engine_path,
-                             int armor_classes, int max_cars, int opt_cars,
-                             float iou_thresh, float car_nms_thresh,
-                             float car_conf_thresh, float armor_nms_thresh,
-                             float armor_conf_thresh, size_t image_size,
+                             cv::Size image_size, int armor_classes,
+                             int max_cars, int opt_cars, float iou_thresh,
+                             float car_nms_thresh, float car_conf_thresh,
+                             float armor_nms_thresh, float armor_conf_thresh,
                              float input_width, float input_height,
                              std::string_view input_name, int input_channels,
                              int opt_level)
     : iou_thresh_(iou_thresh),
       car_detector_(std::make_unique<Detector>(
-          car_engine_path, 1, 1, std::nullopt, image_size, car_nms_thresh,
+          car_engine_path, 1, image_size, 1, std::nullopt, car_nms_thresh,
           car_conf_thresh, input_width, input_height, input_name,
           input_channels, opt_level)),
       armor_detector_(std::make_unique<Detector>(
-          armor_engine_path, armor_classes, max_cars, opt_cars, image_size,
+          armor_engine_path, armor_classes, image_size, max_cars, opt_cars,
           armor_nms_thresh, armor_conf_thresh, input_width, input_height,
           input_name, input_channels, opt_level)) {}
 

@@ -264,7 +264,7 @@ void Detector::restoreDetection(Detection& detection,
     detection.width = std::clamp(detection.width * pparam.ratio, 0.0f,
                                  pparam.width - detection.x);
     detection.height = std::clamp(detection.height * pparam.ratio, 0.0f,
-                                  pparam.height - detection.height);
+                                  pparam.height - detection.y);
 }
 
 /**

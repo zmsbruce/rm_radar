@@ -129,11 +129,10 @@ std::vector<Robot> SampleRadar::runOnce(const Frame& frame) {
 /**
  * @brief Gets the `cv::Scalar` color by the label of the input `Robot` object.
  *
- * @param robot The robot class.
+ * @param label The label of robot class.
  * @return the `cv::Scalar` color
  */
-static cv::Scalar cvColor(const Robot& robot) {
-    auto label = robot.label().value_or(-1);
+static cv::Scalar cvColor(int label) {
     switch (label) {
         case Label::BlueHero:
         case Label::BlueEngineer:
@@ -176,7 +175,7 @@ void SampleRadar::visualize(const Frame& frame,
     }
     cv::Mat image = frame.image().value().clone();
     for (const auto& robot : robots) {
-        auto color = cvColor(robot);
+        auto color = cvColor(robot.label().value_or(-1));
         if (robot.rect().has_value()) {
             auto rect = robot.rect().value();
             cv::rectangle(image, rect, color, thickness);
@@ -242,6 +241,36 @@ void SampleRadar::visualize(const Frame& frame,
                                       base_line * 2),
                 font, font_size, cv::Scalar(255, 255, 255), thickness,
                 cv::LINE_AA);
+
+            // Armors
+            constexpr double armor_font_size = font_size * 0.75;
+            if (robot.armors().has_value()) {
+                auto armors = robot.armors().value();
+                for (const auto& armor : armors) {
+                    auto armor_rect =
+                        cv::Rect(armor.x, armor.y, armor.width, armor.height);
+                    auto color = cvColor(static_cast<int>(armor.label));
+                    cv::rectangle(image, armor_rect, color, thickness);
+
+                    int base_line;
+                    auto text = cv::format("%s %.2f",
+                                           robot_names.at(armor.label).c_str(),
+                                           armor.confidence);
+                    auto label_size = cv::getTextSize(
+                        text, font, armor_font_size, thickness, &base_line);
+                    cv::rectangle(
+                        image,
+                        cv::Rect(armor_rect.x,
+                                 armor_rect.y - label_size.height - base_line,
+                                 label_size.width, label_size.height),
+                        color, -1);
+                    cv::putText(
+                        image, text,
+                        cv::Point(armor_rect.x, armor_rect.y - base_line), font,
+                        armor_font_size, cv::Scalar(255, 255, 255), thickness,
+                        cv::LINE_AA);
+                }
+            }
         }
     }
 

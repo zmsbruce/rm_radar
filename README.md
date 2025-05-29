@@ -1,9 +1,3 @@
-<div align="center">
-<img src="./doc/images/readme/cover.jpeg">
-</div>
-
-<br>
-
 <div align="center" float="left">
 <a href="https://www.robomaster.com/zh-CN">
 <img src="./doc/images/readme/RoboMaster-mecha-logo.png" width=25% />
@@ -29,6 +23,12 @@ _<div align="right">by zmsbruce</div>_
 - **跟踪 👁️**：对当前帧识别到的机器人进行位置滤波和跟踪，避免误识别和位置检测跳变带来的影响；
 
 根据官方披露的数据，以该项目为核心构造的雷达站系统，其平均标记准确率为 **83.66%**，最高单场标记准确率 **93.55%**，局均易伤时间 **686.4** 秒，局均额外伤害 **177**.
+
+<div align="center">
+<img src="./doc/images/readme/cover.jpeg" width=75%>
+</div>
+
+<br>
 
 ### <div align="center"> 2. 性能 🚀 </div>
 
